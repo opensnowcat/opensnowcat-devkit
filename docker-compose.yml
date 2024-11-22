@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  zookeeper:
+    image: zookeeper:3.7.0
+    restart: on-failure
+    ports:
+      - '2181:2181'
+    environment:
+      ZOO_MAX_CLIENT_CNXNS: 60
+      ZOO_JUTE_MAXBUFFER: 4194304  # Increase buffer size to 4MB      
+
+  # Just for quick compatibility, not having to change the 
+  # collector and enrich configs, this is still Kafka
+  warp:
+    image: bitnami/kafka:3.4.0-debian-11-r12
+    restart: on-failure
+    ports:
+      - '9092:9092'
+      - '29092:29092'
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_CFG_LOG_RETENTION_HOURS: 168
+      KAFKA_CFG_BROKER_ID: 1001
+      KAFKA_CFG_RESERVED_BROKER_MAX_ID: 1001
+      KAFKA_CFG_LISTENERS: INTERNAL://:9092,EXTERNAL://0.0.0.0:29092
+      KAFKA_CFG_ADVERTISED_LISTENERS: INTERNAL://warp:9092,EXTERNAL://localhost:29092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      ALLOW_PLAINTEXT_LISTENER: 'true'
+      KAFKA_CFG_MESSAGE_MAX_BYTES: 200000000   # Increase to 200MB
+      KAFKA_CFG_REPLICA_FETCH_MAX_BYTES: 200000000  # Increase to 200MB
+      KAFKA_CFG_MAX_REQUEST_SIZE: 200000000  # Increase to 200MB
+
+  opensnowcat_collector:
+    image: opensnowcat/opensnowcat-collector-kafka:latest
+    volumes:
+      - ./opensnowcat:/opensnowcat
+    command: '--config /opensnowcat/config.collector.hocon'
+    restart: on-failure
+    depends_on:
+      - warp
+    ports:
+      - "8080:8080"      
+    environment:
+      LOG_LEVEL: "INFO"
+      
+  opensnowcat_enrich:
+    image: opensnowcat/opensnowcat-enrich-kafka:latest
+    volumes:
+      - ./opensnowcat:/opensnowcat
+    command: '--enrichments /opensnowcat/enrichments --iglu-config /opensnowcat/resolver.json --config /opensnowcat/config.enrich.hocon'
+    restart: on-failure
+    depends_on:
+      - warp
+    environment:
+      LOG_LEVEL: "INFO"
+
+
+  kafka-ui:
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "8081:8080"
+    depends_on:
+      - warp      
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=Local Kafka Cluster
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=warp:9092
+      - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
+      - KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL=PLAINTEXT
+      - DYNAMIC_CONFIG_ENABLED='true'

@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+
+  warp:
+      image: public.ecr.aws/warpstream-labs/warpstream_agent:latest
+      command:
+        - playground
+        - -advertiseHostnameStrategy
+        - custom
+        - -advertiseHostnameCustom
+        - warp
+      environment:
+        # this is a no-op as it will default on the custom advertised hostname defined above, but you can change this if you want to use a different hostname with Kafka
+        - WARPSTREAM_DISCOVERY_KAFKA_HOSTNAME_OVERRIDE=warp
+      healthcheck:
+        # Wait for the Agent to finish setting up the demo before marking it as healthy
+        # to delay the diagnose-connection command from running for a few seconds.
+        test: ["CMD", "sh", "-c", "sleep 10"]
+        interval: 5s
+        timeout: 15s
+        retries: 5
+
+
+  opensnowcat_collector:
+    image: opensnowcat/opensnowcat-collector-kafka:latest
+    volumes:
+      - ./opensnowcat:/opensnowcat
+    command: '--config /opensnowcat/config.collector.hocon'
+    restart: on-failure
+    depends_on:
+      - warp
+    ports:
+      - "8080:8080"   
+
+
+  opensnowcat_enrich:
+    image: opensnowcat/opensnowcat-enrich-kafka:latest
+    volumes:
+      - ./opensnowcat:/opensnowcat
+    command: '--enrichments /opensnowcat/enrichments --iglu-config /opensnowcat/resolver.json --config /opensnowcat/config.enrich.hocon'
+    restart: on-failure
+    depends_on:
+      - warp
+    environment:
+      LOG_LEVEL: "INFO"
+      JAVA_OPTS: "-Dlogback.configurationFile=/opensnowcat/etc/logback.xml -Dorg.slf4j.simpleLogger.defaultLogLevel=info"
+
+
+  kafka-ui:
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "8081:8080"
+    depends_on:
+      - warp  # Add a dependency on Warpstream
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=Warpstream Kafka Cluster
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=warp:9092  # Use Warpstream's service name
+      - KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL=PLAINTEXT
+      - DYNAMIC_CONFIG_ENABLED='true'
