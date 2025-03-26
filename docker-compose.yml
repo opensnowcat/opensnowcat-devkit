@@ -38,7 +38,7 @@ services:
     image: opensnowcat/opensnowcat-collector-kafka:latest
     volumes:
       - ./opensnowcat:/opensnowcat
-    command: '--config /opensnowcat/config.collector.hocon'
+    command: '--config /opensnowcat/config.collector-geoff.hocon'
     restart: on-failure
     depends_on:
       - warp

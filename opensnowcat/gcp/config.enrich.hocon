@@ -1,0 +1,17 @@
+{
+  "input": {
+    "type": "PubSub"    
+    "subscription": "projects/deletethisnoproblem/subscriptions/collected-good-sub"
+  }
+
+  "output": {
+    "good": {
+      "type": "PubSub"
+      "topic": "projects/deletethisnoproblem/topics/enriched-good"
+    }
+
+    "bad": {
+      "topic": "projects/deletethisnoproblem/topics/enriched-bad"
+    }
+  }
+}

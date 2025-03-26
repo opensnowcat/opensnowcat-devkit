@@ -1,0 +1,22 @@
+collector {
+  interface = "0.0.0.0"
+  port = 8080
+
+ # optional SSL/TLS configuration
+  ssl {
+    enable = false
+    # whether to redirect HTTP to HTTPS
+    redirect = false
+    port = 443
+  }
+
+  streams {
+    enabled = google-pub-sub
+    good = "collected-good"
+    bad = "collected-bad"
+
+    sink {
+      googleProjectId = "deletethisnoproblem"
+    }
+  }
+}

@@ -3,7 +3,7 @@
   "data": {
     "cacheSize": 0, 
     "cacheTtl": 0,
-    "repositories": [
+    "repositories": [ 
       {
         "name": "Iglu Central",
         "priority": 10,

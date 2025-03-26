@@ -15,6 +15,10 @@ Open your browser and visit KafkaUI: `https://localhost:8081` to inspect your ka
 
 Start the environment with: `docker compose -f docker-warpstream.yml up`  
 
+## Using Google Cloud
+
+See README.md under opensnowcat/gcp/.
+
 ## Sending events to the collector
 
 The easiest way to send events to the collector is using ngrok to map your local collector to a public https endpoint and then use [Snowplow Chrome Debugger](https://chromewebstore.google.com/detail/snowplow-debugger/jbnlcgeengmijcghameodeaenefieedm)  [collector override ](https://www.snowcatcloud.com/docs/snowplow-chrome-extension/how-to-use/#collector-override/) feature. 
