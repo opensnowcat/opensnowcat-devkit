@@ -16,7 +16,6 @@ services:
     image: bitnami/kafka:3.4.0-debian-11-r12
     restart: on-failure
     ports:
-      - '9092:9092'
       - '29092:29092'
     depends_on:
       - zookeeper
@@ -38,7 +37,7 @@ services:
     image: opensnowcat/opensnowcat-collector-kafka:latest
     volumes:
       - ./opensnowcat:/opensnowcat
-    command: '--config /opensnowcat/config.collector-geoff.hocon'
+    command: '--config /opensnowcat/config.collector.hocon'
     restart: on-failure
     depends_on:
       - warp
@@ -72,3 +71,11 @@ services:
       - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
       - KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL=PLAINTEXT
       - DYNAMIC_CONFIG_ENABLED='true'
+
+  kafka_proxy:
+    image: alpine/socat
+    command: TCP-LISTEN:9092,fork,reuseaddr TCP:warp:9092
+    ports:
+      - "9092:9092"
+    depends_on:
+      - warp

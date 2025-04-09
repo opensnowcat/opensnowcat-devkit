@@ -7,6 +7,10 @@ There are two options to use this devkit: Kafka or Warpstream (Kafka compatible 
 
 ## Using Kafka
 
+Add the line to your /etc/hosts
+
+`127.0.0.1  warp`
+
 Start the environment with: `docker compose up -d`
 
 Open your browser and visit KafkaUI: `https://localhost:8081` to inspect your kafka topics and messages. Topics are created automatically according to the collector and enricher configuration.

@@ -9,10 +9,10 @@ services:
         - -advertiseHostnameStrategy
         - custom
         - -advertiseHostnameCustom
-        - warp
+        - warp   
       environment:
         # this is a no-op as it will default on the custom advertised hostname defined above, but you can change this if you want to use a different hostname with Kafka
-        - WARPSTREAM_DISCOVERY_KAFKA_HOSTNAME_OVERRIDE=warp
+        - WARPSTREAM_DISCOVERY_KAFKA_HOSTNAME_OVERRIDE=warp    
       healthcheck:
         # Wait for the Agent to finish setting up the demo before marking it as healthy
         # to delay the diagnose-connection command from running for a few seconds.
@@ -20,7 +20,6 @@ services:
         interval: 5s
         timeout: 15s
         retries: 5
-
 
   opensnowcat_collector:
     image: opensnowcat/opensnowcat-collector-kafka:latest
@@ -59,3 +58,11 @@ services:
       - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=warp:9092  # Use Warpstream's service name
       - KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL=PLAINTEXT
       - DYNAMIC_CONFIG_ENABLED='true'
+
+  kafka_proxy:
+    image: alpine/socat
+    command: TCP-LISTEN:9092,fork,reuseaddr TCP:warp:9092
+    ports:
+      - "9092:9092"
+    depends_on:
+      - warp
