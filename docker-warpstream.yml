@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
 
   warp:
@@ -24,7 +22,7 @@ services:
   opensnowcat_collector:
     image: opensnowcat/opensnowcat-collector-kafka:latest
     volumes:
-      - ./opensnowcat:/opensnowcat
+      - ${PWD}/opensnowcat:/opensnowcat
     command: '--config /opensnowcat/config.collector.hocon'
     restart: on-failure
     depends_on:
@@ -36,7 +34,7 @@ services:
   opensnowcat_enrich:
     image: opensnowcat/opensnowcat-enrich-kafka:latest
     volumes:
-      - ./opensnowcat:/opensnowcat
+      - ${PWD}/opensnowcat:/opensnowcat
     command: '--enrichments /opensnowcat/enrichments --iglu-config /opensnowcat/resolver.json --config /opensnowcat/config.enrich.hocon'
     restart: on-failure
     depends_on:

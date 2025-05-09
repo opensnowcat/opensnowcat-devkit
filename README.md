@@ -3,7 +3,11 @@
 This devkit was forked from Gitlab, the purpose is to provide an easy local development 
 environment for OpenSnowcat. 
 
-There are two options to use this devkit: Kafka or Warpstream (Kafka compatible platform)
+There are two options to use this devkit: Kafka or Warpstream (Kafka compatible platform). 
+
+Note if you run warpstream it is limited to 4 hours (warpstream demo) but Kafka is not.
+
+Run docker from root directory for Windows/Mac/Linux compatibility.
 
 ## Using Kafka
 
