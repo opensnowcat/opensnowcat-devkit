@@ -1,6 +1,13 @@
+networks:
+  appnet:
+    name: opensnowcat
+    
 services:
 
   warp:
+      networks:
+          appnet:
+            aliases: [warp] # Lets other containers call warp
       image: public.ecr.aws/warpstream-labs/warpstream_agent:latest
       command:
         - playground
@@ -20,6 +27,7 @@ services:
         retries: 5
 
   opensnowcat_collector:
+    networks: [ appnet ]
     image: opensnowcat/opensnowcat-collector-kafka:latest
     volumes:
       - ${PWD}/opensnowcat:/opensnowcat
@@ -32,6 +40,7 @@ services:
 
 
   opensnowcat_enrich:
+    networks: [ appnet ]  
     image: opensnowcat/opensnowcat-enrich-kafka:latest
     volumes:
       - ${PWD}/opensnowcat:/opensnowcat
@@ -45,6 +54,7 @@ services:
 
 
   kafka-ui:
+    networks: [ appnet ]  
     container_name: kafka-ui
     image: provectuslabs/kafka-ui:latest
     ports:
@@ -58,8 +68,9 @@ services:
       - DYNAMIC_CONFIG_ENABLED='true'
 
   kafka_proxy:
+    networks: [ appnet ]    
     image: alpine/socat
-    command: TCP-LISTEN:9092,fork,reuseaddr TCP:warp:9092
+    command: ["-d","-d","TCP-LISTEN:9092,bind=0.0.0.0,fork,reuseaddr","TCP:warp:9092"]
     ports:
       - "9092:9092"
     depends_on:
