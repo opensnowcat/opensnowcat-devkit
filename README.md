@@ -37,5 +37,12 @@ Open a terminal and run ngrok.
 
 Use the ngrok URL `https://xxxxxxxx.ngrok-free.app` in the SnowcatCloud Chrome Extension in the collector override.
 
+## Send Events
+
+Send 100 bad events 10 at a time.
+`./send_bad_events.sh 100 https://aa27003dcf40.ngrok-free.app 10`
+
+Send 100 good events 10 at a time.
+`./send_good_events.sh 100 https://aa27003dcf40.ngrok-free.app 10`
 
  
