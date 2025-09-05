@@ -39,10 +39,10 @@ Use the ngrok URL `https://xxxxxxxx.ngrok-free.app` in the SnowcatCloud Chrome E
 
 ## Send Events
 
-Send 100 bad events 10 at a time.
-`./send_bad_events.sh 100 https://aa27003dcf40.ngrok-free.app 10`
+Send 10 bad events 2 at a time.
+`./send_bad_events.sh 10 https://f19edf064bfe.ngrok-free.app 2`
 
-Send 100 good events 10 at a time.
-`./send_good_events.sh 100 https://aa27003dcf40.ngrok-free.app 10`
+Send 10 good events 2 at a time.
+`./send_good_events.sh 10 https://f19edf064bfe.ngrok-free.app 2`
 
  
