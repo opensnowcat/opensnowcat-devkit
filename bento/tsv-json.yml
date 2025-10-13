@@ -1,0 +1,17 @@
+input:
+  kafka_franz:
+    seed_brokers: ["warp:9092"]
+    topics: ["enriched-good"]
+    consumer_group: "pipeline:enriched-good-json"
+
+pipeline:
+  processors:
+    - opensnowcat:
+        output_format: json
+                           
+output:
+  kafka_franz:
+    seed_brokers: ["warp:9092"]
+    topic: "enriched-good-json"
+    batching:
+      count: 1

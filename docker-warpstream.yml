@@ -5,9 +5,10 @@ networks:
 services:
 
   warp:
+      container_name: warp
       networks:
           appnet:
-            aliases: [warp] # Lets other containers call warp
+            aliases: [warp]
       image: public.ecr.aws/warpstream-labs/warpstream_agent:latest
       command:
         - playground
@@ -16,17 +17,15 @@ services:
         - -advertiseHostnameCustom
         - warp   
       environment:
-        # this is a no-op as it will default on the custom advertised hostname defined above, but you can change this if you want to use a different hostname with Kafka
         - WARPSTREAM_DISCOVERY_KAFKA_HOSTNAME_OVERRIDE=warp    
       healthcheck:
-        # Wait for the Agent to finish setting up the demo before marking it as healthy
-        # to delay the diagnose-connection command from running for a few seconds.
         test: ["CMD", "sh", "-c", "sleep 10"]
         interval: 5s
         timeout: 15s
         retries: 5
 
   opensnowcat_collector:
+    container_name: opensnowcat_collector
     networks: [ appnet ]
     image: opensnowcat/opensnowcat-collector-kafka:latest
     volumes:
@@ -38,8 +37,8 @@ services:
     ports:
       - "8080:8080"   
 
-
   opensnowcat_enrich:
+    container_name: opensnowcat_enrich
     networks: [ appnet ]  
     image: opensnowcat/opensnowcat-enrich-kafka:latest
     volumes:
@@ -52,22 +51,22 @@ services:
       LOG_LEVEL: "INFO"
       JAVA_OPTS: "-Dlogback.configurationFile=/opensnowcat/etc/logback.xml -Dorg.slf4j.simpleLogger.defaultLogLevel=info"
 
-
   kafka-ui:
-    networks: [ appnet ]  
     container_name: kafka-ui
+    networks: [ appnet ]  
     image: provectuslabs/kafka-ui:latest
     ports:
       - "8081:8080"
     depends_on:
-      - warp  # Add a dependency on Warpstream
+      - warp
     environment:
       - KAFKA_CLUSTERS_0_NAME=Warpstream Kafka Cluster
-      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=warp:9092  # Use Warpstream's service name
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=warp:9092
       - KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL=PLAINTEXT
       - DYNAMIC_CONFIG_ENABLED='true'
 
   kafka_proxy:
+    container_name: kafka_proxy
     networks: [ appnet ]    
     image: alpine/socat
     command: ["-d","-d","TCP-LISTEN:9092,bind=0.0.0.0,fork,reuseaddr","TCP:warp:9092"]
@@ -75,3 +74,17 @@ services:
       - "9092:9092"
     depends_on:
       - warp
+
+  bento:
+    container_name: bento
+    networks: [ appnet ]
+    image: ghcr.io/warpstreamlabs/bento:latest
+    volumes:
+      - ./bento:/configs
+    command: '-c /configs/tsv-json.yml'
+    restart: on-failure
+    depends_on:
+      - warp
+      - opensnowcat_enrich
+    environment:
+      LOG_LEVEL: "DEBUG"

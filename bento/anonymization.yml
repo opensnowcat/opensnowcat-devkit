@@ -1,0 +1,36 @@
+# Bento pipeline: PII & IP Anonymization & Bot Filtering
+# Bento pipeline: enriched-good  ->  enriched-good-anonymized
+input:
+  kafka_franz:
+    seed_brokers: ["warp:9092"]
+    topics: ["enriched-good"]
+    consumer_group: "pipeline:enriched-good-anonymized"
+
+pipeline:
+  processors:
+    - opensnowcat:
+        output_format: json
+        filters:
+          drop:
+            nl.basjes.yauaa_context.agentClass: 
+              contains: ["Bot"]
+          transform:
+            salt: "your-secret-salt-here"
+            hash_algo: SHA-256
+            fields:
+              user_id:
+                strategy: hash
+              user_ipaddress:
+                strategy: anonymize_ip
+                anon_octets: 2
+                anon_segments: 3
+              network_userid:
+                strategy: redact
+                redact_value: "[REDACTED]"   
+                           
+output:
+  kafka_franz:
+    seed_brokers: ["warp:9092"]
+    topic: "enriched-good-anonymized"
+    batching:
+      count: 1
