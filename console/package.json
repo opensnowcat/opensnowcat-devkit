@@ -1,0 +1,45 @@
+{
+  "name": "opensnowcat-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenSnowcat Console: live good/bad event stream, schema editing and pipeline control for the OpenSnowcat devkit",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev --port 8082",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "typecheck": "nuxt typecheck"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/language": "^6.11.0",
+    "@codemirror/lint": "^6.8.5",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "@codemirror/view": "^6.36.0",
+    "@iconify-json/lucide": "^1.2.134",
+    "@iconify-json/simple-icons": "^1.2.96",
+    "@nuxt/ui": "^4.11.1",
+    "@platformatic/kafka": "^2.12.0",
+    "ajv": "^8.20.0",
+    "ajv-draft-04": "^1.0.0",
+    "ajv-formats": "^3.0.1",
+    "codemirror": "^6.0.2",
+    "dockerode": "^5.0.1",
+    "nuxt": "^4.5.2",
+    "qrcode": "^1.5.4",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.17.0",
+    "@types/dockerode": "^3.3.34",
+    "@types/qrcode": "^1.5.5",
+    "eslint": "^10.11.0",
+    "typescript": "^6.0.3",
+    "vue-tsc": "^3.3.11"
+  }
+}

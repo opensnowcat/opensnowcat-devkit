@@ -1,0 +1,40 @@
+{
+  "$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+  "description": "Example self-describing event: a shopper viewed a product page",
+  "self": {
+    "vendor": "com.opensnowcat.example",
+    "name": "product_view",
+    "format": "jsonschema",
+    "version": "1-0-0"
+  },
+  "type": "object",
+  "properties": {
+    "sku": {
+      "type": "string",
+      "description": "Stock keeping unit",
+      "maxLength": 64
+    },
+    "name": {
+      "type": "string",
+      "description": "Product display name",
+      "maxLength": 255
+    },
+    "category": {
+      "type": "string",
+      "description": "Top-level category",
+      "maxLength": 128
+    },
+    "price": {
+      "type": "number",
+      "description": "Unit price in the shop currency",
+      "minimum": 0
+    },
+    "currency": {
+      "type": "string",
+      "description": "ISO 4217 currency code",
+      "enum": ["USD", "EUR", "GBP"]
+    }
+  },
+  "required": ["sku", "name", "price", "currency"],
+  "additionalProperties": false
+}
