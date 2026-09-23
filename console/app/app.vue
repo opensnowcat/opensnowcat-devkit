@@ -6,11 +6,11 @@ useHead({
 })
 
 const links: NavigationMenuItem[] = [
-  { label: 'Live stream', icon: 'i-lucide-radio', to: '/' },
-  { label: 'Schemas', icon: 'i-lucide-file-json', to: '/schemas' },
-  { label: 'Schema registries', icon: 'i-lucide-library', to: '/registries' },
-  { label: 'Expose', icon: 'i-lucide-globe', to: '/expose' },
-  { label: 'Pipeline', icon: 'i-lucide-server', to: '/pipeline' }
+  { label: 'Live Stream', icon: 'i-lucide-radio', to: '/' },
+  { label: 'Pipeline', icon: 'i-lucide-server', to: '/pipeline' },
+  { label: 'Schema Editor', icon: 'i-lucide-file-json', to: '/schemas' },
+  { label: 'Schema Registry', icon: 'i-lucide-library', to: '/registries' },
+  { label: 'Expose', icon: 'i-lucide-globe', to: '/expose' }
 ]
 
 const external: NavigationMenuItem[] = [

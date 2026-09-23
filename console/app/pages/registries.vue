@@ -1,38 +1,35 @@
 <script setup lang="ts">
-useHead({ title: 'Schema registries · OpenSnowcat Console' })
+import type { RegistryContext, RegistryKind, RegistryRow } from '~/types/registries'
+import { KIND_ICON, KIND_LABEL, emptyRow } from '~/types/registries'
+
+useHead({ title: 'Schema Registry · OpenSnowcat Console' })
 
 interface Registry { name: string, priority: number, vendorPrefixes: string[], connection: { http?: { uri: string, apikey?: string }, embedded?: { path: string } } }
 interface ResolverDoc { schema: string, data: { cacheSize: number, cacheTtl?: number, repositories: Registry[] } }
-interface FolderInfo { id: string, path: string, root: string, url: string, primary: boolean, exists: boolean, display: string }
+interface FolderInfo { id: string, path: string, root: string, url: string, primary: boolean, exists: boolean, display: string, count: number }
+interface SnowcatInfo { proxyUrl: string, upstream: string, configured: boolean }
 interface Attempt { registry: string, uri: string | null, kind: string, status: 'found' | 'not-found' | 'error' | 'skipped', httpStatus?: number, durationMs?: number, message?: string, matchedPrefix: boolean }
-interface FolderCheck { exists: boolean, isDirectory: boolean, root: string, count: number, sample: string[], message: string, display: string }
-type Kind = 'folder' | 'snowcatcloud' | 'http' | 'embedded'
-interface KeyCheck { ok: boolean, authorized: boolean, pulled: boolean, status: number | null, count: number, vendors: string[], sample: string[], pulledUri: string | null, message: string, durationMs: number }
-interface Row { name: string, priority: number, vendorPrefixes: string[], kind: Kind, folderId: string, path: string, display?: string, uri: string, apikey: string, embeddedPath: string, check?: FolderCheck | null, checking?: boolean, keyCheck?: KeyCheck | null, keyChecking?: boolean, showKey?: boolean, keySaved?: boolean }
 
 const toast = useToast()
 const hydrated = useHydrated()
 const runtime = useRuntimeConfig()
 const snowcatUrl = String(runtime.public.snowcatRegistryUrl).replace(/\/+$/, '')
 const snowcatSignup = String(runtime.public.snowcatSignupUrl)
-const snowcatProxy = computed(() => data.value?.snowcat.proxyUrl ?? '')
-const snowcatHost = (() => { try { return new URL(snowcatUrl).host } catch { return '' } })()
-/** Proxy entry written by this console, or a legacy direct entry someone typed by hand. */
-function snowcatKind(uri: string): 'proxy' | 'direct' | null {
-  const clean = uri.replace(/\/+$/, '')
-  if (snowcatProxy.value && clean === snowcatProxy.value) return 'proxy'
+const snowcatHost = (() => {
   try {
-    if (new URL(clean).host === snowcatHost) return 'direct'
-  } catch { /* not a url */ }
-  return null
-}
-interface SnowcatInfo { proxyUrl: string, upstream: string, configured: boolean }
+    return new URL(snowcatUrl).host
+  } catch {
+    return ''
+  }
+})()
+
 const { data, refresh, pending } = await useFetch<{ doc: ResolverDoc, path: string, consoleRegistryUrl: string, folders: FolderInfo[], snowcat: SnowcatInfo }>('/api/resolver', { server: false, lazy: true })
 
-const form = reactive<{ cacheSize: number, cacheTtl: number | null, rows: Row[] }>({ cacheSize: 0, cacheTtl: null, rows: [] })
+const base = computed(() => data.value?.consoleRegistryUrl ?? 'http://console:3000/iglu')
+const snowcatProxy = computed(() => data.value?.snowcat.proxyUrl ?? '')
+const form = reactive<{ cacheSize: number, cacheTtl: number | null, rows: RegistryRow[] }>({ cacheSize: 0, cacheTtl: null, rows: [] })
 const original = ref('')
 const needsMigration = ref(false)
-const base = computed(() => data.value?.consoleRegistryUrl ?? 'http://console:3000/iglu')
 
 function folderIdFromUrl(uri: string): string | null {
   const clean = uri.replace(/\/+$/, '')
@@ -42,6 +39,14 @@ function folderIdFromUrl(uri: string): string | null {
 }
 function folderUrl(id: string): string {
   return id === 'local' ? base.value : `${base.value}/f/${id}`
+}
+function snowcatKind(uri: string): 'proxy' | 'direct' | null {
+  const clean = uri.replace(/\/+$/, '')
+  if (snowcatProxy.value && clean === snowcatProxy.value) return 'proxy'
+  try {
+    if (new URL(clean).host === snowcatHost) return 'direct'
+  } catch { /* not a url */ }
+  return null
 }
 function slug(name: string): string {
   const s = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'folder'
@@ -57,19 +62,18 @@ function load() {
   form.cacheSize = data.value.doc.data.cacheSize
   form.cacheTtl = data.value.doc.data.cacheTtl ?? null
   needsMigration.value = data.value.doc.data.repositories.some(r => !!r.connection.http && snowcatKind(r.connection.http.uri) === 'direct')
-  form.rows = data.value.doc.data.repositories.map((r): Row => {
+  const repos = [...data.value.doc.data.repositories].sort((a, b) => a.priority - b.priority)
+  form.rows = repos.map((r): RegistryRow => {
+    const common = { ...emptyRow(), isNew: false, name: r.name, priority: r.priority, vendorPrefixes: [...r.vendorPrefixes] }
     const fid = r.connection.http ? folderIdFromUrl(r.connection.http.uri) : null
     if (fid) {
       const f = folders.find(x => x.id === fid)
-      return { name: r.name, priority: r.priority, vendorPrefixes: [...r.vendorPrefixes], kind: 'folder', folderId: fid, path: f?.path ?? '', display: f?.display, uri: '', apikey: '', embeddedPath: '', check: null }
+      return { ...common, kind: 'folder', folderId: fid, path: f?.path ?? '', display: f?.display }
     }
     const sc = r.connection.http ? snowcatKind(r.connection.http.uri) : null
-    if (sc) {
-      // Legacy direct entries carry the key in resolver.json; it moves into the console store on the next save.
-      return { name: r.name, priority: r.priority, vendorPrefixes: [...r.vendorPrefixes], kind: 'snowcatcloud', folderId: '', path: '', uri: snowcatUrl, apikey: sc === 'direct' ? (r.connection.http?.apikey ?? '') : '', keySaved: sc === 'proxy' && !!data.value?.snowcat.configured, embeddedPath: '', keyCheck: null }
-    }
-    if (r.connection.http) return { name: r.name, priority: r.priority, vendorPrefixes: [...r.vendorPrefixes], kind: 'http', folderId: '', path: '', uri: r.connection.http.uri, apikey: r.connection.http.apikey ?? '', embeddedPath: '' }
-    return { name: r.name, priority: r.priority, vendorPrefixes: [...r.vendorPrefixes], kind: 'embedded', folderId: '', path: '', uri: '', apikey: '', embeddedPath: r.connection.embedded?.path ?? '' }
+    if (sc) return { ...common, kind: 'snowcatcloud', uri: snowcatUrl, apikey: sc === 'direct' ? (r.connection.http?.apikey ?? '') : '', keySaved: sc === 'proxy' && !!data.value?.snowcat.configured }
+    if (r.connection.http) return { ...common, kind: 'http', uri: r.connection.http.uri, apikey: r.connection.http.apikey ?? '' }
+    return { ...common, kind: 'embedded', embeddedPath: r.connection.embedded?.path ?? '' }
   })
   original.value = JSON.stringify(payload())
 }
@@ -81,9 +85,9 @@ function payload() {
     data: {
       cacheSize: Number(form.cacheSize) || 0,
       ...(form.cacheTtl != null && String(form.cacheTtl) !== '' ? { cacheTtl: Number(form.cacheTtl) } : {}),
-      repositories: form.rows.map((r): Registry => ({
+      repositories: form.rows.map((r, index): Registry => ({
         name: r.name,
-        priority: Number(r.priority) || 0,
+        priority: index,
         vendorPrefixes: r.vendorPrefixes,
         connection: r.kind === 'folder'
           ? { http: { uri: folderUrl(r.folderId) } }
@@ -97,108 +101,119 @@ function payload() {
   }
   const folders = form.rows.filter(r => r.kind === 'folder' && r.folderId !== 'local').map(r => ({ id: r.folderId, path: r.path }))
   const snowcatRow = form.rows.find(r => r.kind === 'snowcatcloud')
-  // undefined keeps the stored key, '' clears it when the registry is gone, a string replaces it
   const snowcatApiKey = snowcatRow ? (snowcatRow.apikey.trim() ? snowcatRow.apikey.trim() : undefined) : (data.value?.snowcat.configured ? '' : undefined)
   return { doc, folders, snowcatApiKey }
 }
 const dirty = computed(() => needsMigration.value || JSON.stringify(payload()) !== original.value)
 const hasLocal = computed(() => form.rows.some(r => r.kind === 'folder' && r.folderId === 'local'))
+const hasSnowcat = computed(() => form.rows.some(r => r.kind === 'snowcatcloud'))
 const localFolder = computed(() => data.value?.folders.find(f => f.primary))
 
+const context = computed<RegistryContext>(() => ({
+  snowcatUrl,
+  snowcatSignup,
+  snowcatConfigured: !!data.value?.snowcat.configured,
+  localPath: localFolder.value?.path ?? '/schemas',
+  hasLocal: hasLocal.value,
+  hasSnowcat: hasSnowcat.value,
+  folderUrl,
+  slug
+}))
+
+// ---- editor
+const editorOpen = ref(false)
+const editing = ref<RegistryRow | null>(null)
+function edit(row: RegistryRow) {
+  editing.value = row
+  editorOpen.value = true
+}
 function add(preset: 'local' | 'folder' | 'snowcatcloud' | 'iglu-central' | 'http' | 'embedded') {
-  const empty: Row = { name: '', priority: 0, vendorPrefixes: [], kind: 'http', folderId: '', path: '', uri: '', apikey: '', embeddedPath: '', check: null }
+  let row: RegistryRow
   switch (preset) {
     case 'local':
-      form.rows.unshift({ ...empty, name: 'Linked directory (this console)', kind: 'folder', folderId: 'local', path: localFolder.value?.path ?? '/schemas' })
+      row = { ...emptyRow('folder'), name: 'Local schemas (this console)', folderId: 'local', path: localFolder.value?.path ?? '/schemas', display: localFolder.value?.display }
       break
-    case 'folder': {
-      const name = 'Extra schema folder'
-      form.rows.unshift({ ...empty, name, kind: 'folder', folderId: slug(name), path: '' })
-      browseFor(form.rows[0]!)
+    case 'folder':
+      row = { ...emptyRow('folder'), name: 'Extra schema folder', folderId: slug('folder') }
       break
-    }
     case 'snowcatcloud':
-      if (form.rows.some(r => r.kind === 'snowcatcloud')) return toast.add({ title: 'SnowcatCloud is already listed', color: 'neutral' })
-      form.rows.splice(hasLocal.value ? 1 : 0, 0, { ...empty, name: 'SnowcatCloud Schema Registry', priority: 5, kind: 'snowcatcloud', uri: snowcatUrl, keyCheck: null, keySaved: !!data.value?.snowcat.configured })
+      row = { ...emptyRow('snowcatcloud'), name: 'SnowcatCloud Schema Registry', priority: 5, uri: snowcatUrl, keySaved: !!data.value?.snowcat.configured }
       break
     case 'iglu-central':
-      form.rows.push({ ...empty, name: 'Iglu Central', priority: 10, vendorPrefixes: ['com.snowplowanalytics'], kind: 'http', uri: 'http://iglucentral.com' })
+      row = { ...emptyRow('http'), name: 'Iglu Central', priority: 10, vendorPrefixes: ['com.snowplowanalytics'], uri: 'http://iglucentral.com' }
       break
     case 'embedded':
-      form.rows.push({ ...empty, name: 'Embedded (inside enrich)', priority: 100, kind: 'embedded', embeddedPath: '/iglu-client-embedded' })
+      row = { ...emptyRow('embedded'), name: 'Embedded (inside enrich)', priority: 100, embeddedPath: '/iglu-client-embedded' }
       break
     default:
-      form.rows.push({ ...empty, name: 'My Iglu Server', priority: 5, kind: 'http', uri: 'https://iglu.example.com' })
+      row = { ...emptyRow('http'), name: '', priority: 5, uri: 'https://' }
   }
+  edit(row)
 }
-function remove(i: number) {
-  form.rows.splice(i, 1)
+function onApply(row: RegistryRow) {
+  const i = form.rows.findIndex(r => r.uid === row.uid)
+  if (i >= 0) form.rows.splice(i, 1, row)
+  else if (row.kind === 'folder' && row.folderId === 'local') form.rows.unshift(row)
+  else form.rows.push(row)
 }
-function onKindChange(r: Row) {
+function onRemove(uid: string) {
+  const i = form.rows.findIndex(r => r.uid === uid)
+  if (i >= 0) form.rows.splice(i, 1)
+}
+
+// ---- list + drag to reorder (order = priority)
+const dragging = ref<string | null>(null)
+const dragOver = ref<string | null>(null)
+function onDragStart(uid: string, e: DragEvent) {
+  dragging.value = uid
+  e.dataTransfer?.setData('text/plain', uid)
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+}
+function onDrop(targetUid: string) {
+  const from = form.rows.findIndex(r => r.uid === dragging.value)
+  const to = form.rows.findIndex(r => r.uid === targetUid)
+  dragging.value = null
+  dragOver.value = null
+  if (from < 0 || to < 0 || from === to) return
+  const [row] = form.rows.splice(from, 1)
+  form.rows.splice(to, 0, row!)
+}
+function move(uid: string, delta: number) {
+  const from = form.rows.findIndex(r => r.uid === uid)
+  const to = from + delta
+  if (from < 0 || to < 0 || to >= form.rows.length) return
+  const [row] = form.rows.splice(from, 1)
+  form.rows.splice(to, 0, row!)
+}
+function sourceOf(r: RegistryRow): string {
+  if (r.kind === 'folder') return r.folderId === 'local' ? 'Linked directory (schemas/)' : (r.display ?? r.path ?? '')
+  if (r.kind === 'snowcatcloud') return snowcatUrl.replace(/^https?:\/\//, '')
+  if (r.kind === 'http') return r.uri.replace(/^https?:\/\//, '')
+  return r.embeddedPath
+}
+type Status = { label: string, color: 'success' | 'error' | 'warning' | 'neutral', icon?: string }
+function statusOf(r: RegistryRow): Status {
+  if (r.kind === 'folder') {
+    if (r.check) return r.check.count ? { label: `${r.check.count} schemas`, color: 'success', icon: 'i-lucide-circle-check' } : { label: r.check.exists ? 'Empty' : 'Missing', color: r.check.exists ? 'warning' : 'error', icon: 'i-lucide-triangle-alert' }
+    const f = data.value?.folders.find(x => x.id === r.folderId)
+    if (!f) return { label: 'Unsaved', color: 'neutral', icon: 'i-lucide-clock' }
+    if (!f.exists) return { label: 'Folder missing', color: 'error', icon: 'i-lucide-triangle-alert' }
+    return { label: `${f.count} schema${f.count === 1 ? '' : 's'}`, color: f.count ? 'success' : 'warning', icon: f.count ? 'i-lucide-circle-check' : 'i-lucide-triangle-alert' }
+  }
   if (r.kind === 'snowcatcloud') {
-    r.uri = snowcatUrl
-    r.keyCheck = null
-    if (!r.name.trim() || r.name === 'My Iglu Server') r.name = 'SnowcatCloud Schema Registry'
+    if (r.keyCheck) return r.keyCheck.ok ? { label: `Authorized · ${r.keyCheck.count} schemas`, color: 'success', icon: 'i-lucide-shield-check' } : { label: r.keyCheck.authorized ? 'Authorized, pull failed' : 'Not authorized', color: r.keyCheck.authorized ? 'warning' : 'error', icon: 'i-lucide-shield-x' }
+    if (r.apikey.trim()) return { label: 'Key entered, not checked', color: 'neutral', icon: 'i-lucide-key-round' }
+    return r.keySaved ? { label: 'Key saved', color: 'success', icon: 'i-lucide-key-round' } : { label: 'No key yet', color: 'error', icon: 'i-lucide-key-round' }
   }
-  if (r.kind === 'folder' && !r.folderId) r.folderId = slug(r.name || 'folder')
-  if (r.kind === 'folder' && !r.path) browseFor(r)
-}
-function onNameChange(r: Row) {
-  if (r.kind === 'folder' && r.folderId !== 'local' && !r.path.trim()) r.folderId = slug(r.name)
-}
-const browseOpen = ref(false)
-const browseTarget = ref<Row | null>(null)
-function browseFor(r: Row) {
-  browseTarget.value = r
-  browseOpen.value = true
-}
-function onPicked(path: string, display: string) {
-  const r = browseTarget.value
-  if (!r) return
-  r.path = path
-  r.display = display
-  r.check = null
-  if (!r.name.trim() || r.name === 'Extra schema folder') {
-    r.name = display.split(/[\\/]/).filter(Boolean).pop() ?? 'Schema folder'
-    r.folderId = slug(r.name)
-  }
-  check(r)
+  if (r.kind === 'http') return { label: r.apikey ? 'With API key' : 'Public', color: 'neutral', icon: 'i-lucide-globe' }
+  return { label: 'Inside enrich', color: 'neutral', icon: 'i-lucide-package' }
 }
 
-async function checkKey(r: Row) {
-  r.keyChecking = true
-  try {
-    r.keyCheck = await $fetch<KeyCheck>('/api/registries/snowcatcloud/test', { method: 'POST', body: { apikey: r.apikey } })
-  } catch (e) {
-    r.keyCheck = { ok: false, authorized: false, pulled: false, status: null, count: 0, vendors: [], sample: [], pulledUri: null, message: (e as Error).message ?? String(e), durationMs: 0 }
-  } finally {
-    r.keyChecking = false
-  }
-}
-function useVendors(r: Row) {
-  if (!r.keyCheck?.vendors.length) return
-  r.vendorPrefixes = [...new Set([...r.vendorPrefixes, ...r.keyCheck.vendors])]
-}
-
-async function check(r: Row) {
-  r.checking = true
-  try {
-    r.check = await $fetch<FolderCheck>('/api/folders/check', { query: { path: r.path } })
-  } finally {
-    r.checking = false
-  }
-}
-
+// ---- save
 const saving = ref(false)
 const restartState = ref<'idle' | 'restarting' | 'done' | 'failed'>('idle')
 const restartMessage = ref('')
 async function save(restart = true) {
-  for (const r of form.rows) {
-    if (!r.name.trim()) return toast.add({ title: 'Every registry needs a name', color: 'error', icon: 'i-lucide-x' })
-    if (r.kind === 'http' && !/^https?:\/\//.test(r.uri)) return toast.add({ title: `"${r.name}" needs an http(s) URI`, color: 'error', icon: 'i-lucide-x' })
-    if (r.kind === 'snowcatcloud' && !r.apikey.trim() && !r.keySaved) return toast.add({ title: `"${r.name}" needs your SnowcatCloud API key`, color: 'error', icon: 'i-lucide-x' })
-    if (r.kind === 'folder' && r.folderId !== 'local' && !r.path.trim()) return toast.add({ title: `"${r.name}" needs a folder path`, color: 'error', icon: 'i-lucide-x' })
-  }
   saving.value = true
   restartState.value = restart ? 'restarting' : 'idle'
   try {
@@ -226,7 +241,7 @@ async function save(restart = true) {
   }
 }
 
-// ---- resolve tester
+// ---- resolve tester + lookup order
 const testUri = ref('iglu:com.opensnowcat.example/product_view/jsonschema/1-0-0')
 const testing = ref(false)
 const result = ref<{ found: boolean, resolvedBy: string | null, attempts: Attempt[] } | null>(null)
@@ -242,34 +257,34 @@ async function runTest() {
   }
 }
 const statusColor = (s: Attempt['status']) => s === 'found' ? 'success' : s === 'not-found' ? 'warning' : s === 'error' ? 'error' : 'neutral'
-
 const previewVendor = ref('com.opensnowcat.example')
 const ordered = computed(() => {
   const v = previewVendor.value.trim()
-  const matches = (r: Row) => r.vendorPrefixes.some(p => v.startsWith(p))
-  const byP = (a: Row, b: Row) => a.priority - b.priority
+  const matches = (r: RegistryRow) => r.vendorPrefixes.some(p => v.startsWith(p))
+  const byP = (a: RegistryRow, b: RegistryRow) => a.priority - b.priority
   return [...form.rows.filter(matches).sort(byP), ...form.rows.filter(r => !matches(r)).sort(byP)]
 })
-const kindItems = [
-  { label: 'Folder served by this console', value: 'folder', icon: 'i-lucide-folder-open' },
-  { label: 'SnowcatCloud Schema Registry', value: 'snowcatcloud', icon: 'i-lucide-cloud' },
-  { label: 'HTTP registry', value: 'http', icon: 'i-lucide-globe' },
-  { label: 'Embedded in enrich', value: 'embedded', icon: 'i-lucide-package' }
-]
-const KIND_ICON: Record<Kind, string> = { folder: 'i-lucide-folder-open', snowcatcloud: 'i-lucide-cloud', http: 'i-lucide-globe', embedded: 'i-lucide-package' }
+const kindLabel = (k: RegistryKind) => KIND_LABEL[k]
 </script>
 
 <template>
   <UDashboardPanel id="registries">
     <template #header>
       <UDashboardNavbar
-        title="Schema registries"
+        title="Schema Registry"
         icon="i-lucide-library"
       >
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
         <template #right>
+          <UBadge
+            v-if="dirty"
+            color="warning"
+            variant="subtle"
+            label="Unsaved changes"
+            class="mr-1"
+          />
           <UButton
             icon="i-lucide-refresh-cw"
             color="neutral"
@@ -298,29 +313,21 @@ const KIND_ICON: Record<Kind, string> = { folder: 'i-lucide-folder-open', snowca
 
     <template #body>
       <div class="flex flex-col gap-5">
-        <div class="flex flex-col xl:flex-row xl:items-center gap-3">
-          <p class="text-sm text-muted flex-1">
-            Where enrich looks up schemas, in order. Folders are served by this console and edited on the Schemas page; edits there are live. Changing the list below restarts enrich on save.
-          </p>
-          <UAlert
-            v-if="restartState === 'restarting'"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-loader-circle"
-            title="Restarting enrich…"
-            class="xl:w-auto"
-          />
-          <UAlert
-            v-else-if="restartState === 'failed'"
-            color="error"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            title="Enrich restart failed"
-            :description="restartMessage"
-            class="xl:w-auto"
-          />
-        </div>
-
+        <UAlert
+          v-if="restartState === 'restarting'"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-loader-circle"
+          title="Restarting enrich…"
+        />
+        <UAlert
+          v-else-if="restartState === 'failed'"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-triangle-alert"
+          title="Enrich restart failed"
+          :description="restartMessage"
+        />
         <UAlert
           v-if="needsMigration"
           color="warning"
@@ -339,78 +346,175 @@ const KIND_ICON: Record<Kind, string> = { folder: 'i-lucide-folder-open', snowca
           :actions="[{ label: 'Add the linked directory', icon: 'i-lucide-plus', onClick: () => add('local') }]"
         />
 
-        <div class="grid gap-5 lg:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
-          <UCard variant="subtle">
-            <template #header>
-              <h3 class="font-semibold">
-                Cache
-              </h3>
-              <p class="text-xs text-muted">
-                The devkit ships with no cache so schema edits are live. Turn it on only for load tests.
-              </p>
-            </template>
-            <div class="grid gap-3 sm:grid-cols-2">
-              <UFormField
-                label="Cache size"
-                help="0 = fetch on every lookup"
-                size="sm"
+        <UCard
+          variant="subtle"
+          :ui="{ body: 'p-0 sm:p-0', header: 'py-3' }"
+        >
+          <template #header>
+            <div class="flex flex-wrap items-center gap-3">
+              <div>
+                <h3 class="font-semibold leading-tight">
+                  Registries
+                </h3>
+                <p class="text-xs text-muted">
+                  Drag to set the order enrich tries them in. Click a row to edit. Changing this list restarts enrich on save.
+                </p>
+              </div>
+              <UDropdownMenu
+                class="ml-auto"
+                :items="[
+                  { label: 'Folder', description: 'A directory this console serves', icon: 'i-lucide-folder-plus', onSelect: () => add('folder') },
+                  { label: 'SnowcatCloud', description: 'Your hosted registry, API key only', icon: 'i-lucide-cloud', disabled: hasSnowcat, onSelect: () => add('snowcatcloud') },
+                  { label: 'Iglu Central', description: 'Snowplow public schemas', icon: 'i-lucide-globe', onSelect: () => add('iglu-central') },
+                  { label: 'HTTP registry', description: 'Iglu Server or static host', icon: 'i-lucide-server', onSelect: () => add('http') },
+                  { label: 'Embedded', description: 'Inside the enrich JAR', icon: 'i-lucide-package', onSelect: () => add('embedded') },
+                  ...(!hasLocal ? [{ label: 'Linked directory', description: 'This console\'s schemas/', icon: 'i-lucide-folder-open', onSelect: () => add('local') }] : [])
+                ]"
+                :ui="{ content: 'w-64' }"
               >
-                <UInputNumber
-                  v-model="form.cacheSize"
-                  :min="0"
+                <UButton
+                  icon="i-lucide-plus"
+                  label="Add registry"
                   size="sm"
-                  class="w-full"
+                  trailing-icon="i-lucide-chevron-down"
                 />
-              </UFormField>
-              <UFormField
-                label="TTL (seconds)"
-                help="Only used when the cache is on"
-                size="sm"
-              >
-                <UInputNumber
-                  v-model="form.cacheTtl"
-                  :min="0"
-                  size="sm"
-                  class="w-full"
-                />
-              </UFormField>
+              </UDropdownMenu>
             </div>
-          </UCard>
+          </template>
+          <div class="divide-y divide-default">
+            <div class="grid items-center gap-3 px-3 py-1.5 text-[11px] uppercase tracking-wider text-muted grid-cols-[1.25rem_1.5rem_minmax(0,1.4fr)_minmax(0,1.6fr)_minmax(0,1fr)_10rem_4rem]">
+              <span /><span>#</span><span>Registry</span><span>Source</span><span>Vendor prefixes</span><span>Status</span><span />
+            </div>
+            <div
+              v-for="(r, i) in form.rows"
+              :key="r.uid"
+              class="grid items-center gap-3 px-3 py-2 text-sm cursor-pointer transition-colors grid-cols-[1.25rem_1.5rem_minmax(0,1.4fr)_minmax(0,1.6fr)_minmax(0,1fr)_10rem_4rem] hover:bg-elevated/50"
+              :class="{ 'opacity-40': dragging === r.uid, 'border-t-2 border-primary': dragOver === r.uid && dragging !== r.uid }"
+              draggable="true"
+              @dragstart="onDragStart(r.uid, $event)"
+              @dragover.prevent="dragOver = r.uid"
+              @dragleave="dragOver === r.uid && (dragOver = null)"
+              @drop.prevent="onDrop(r.uid)"
+              @dragend="dragging = null; dragOver = null"
+              @click="edit(r)"
+            >
+              <UIcon
+                name="i-lucide-grip-vertical"
+                class="text-muted cursor-grab active:cursor-grabbing size-4"
+                aria-label="Drag to reorder"
+              />
+              <span class="font-mono text-xs text-muted">{{ i + 1 }}</span>
+              <div class="flex items-center gap-2 min-w-0">
+                <UTooltip :text="kindLabel(r.kind)">
+                  <UIcon
+                    :name="KIND_ICON[r.kind]"
+                    class="size-4 shrink-0"
+                    :class="r.kind === 'snowcatcloud' ? 'text-primary' : 'text-muted'"
+                  />
+                </UTooltip>
+                <span class="font-medium text-highlighted truncate">{{ r.name || '(unnamed)' }}</span>
+                <UBadge
+                  v-if="r.isNew"
+                  color="warning"
+                  variant="subtle"
+                  size="sm"
+                  label="new"
+                />
+              </div>
+              <span class="font-mono text-xs text-muted truncate">{{ sourceOf(r) }}</span>
+              <div class="flex flex-wrap gap-1 min-w-0">
+                <UBadge
+                  v-for="p in r.vendorPrefixes"
+                  :key="p"
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  :label="p"
+                  class="font-mono"
+                />
+                <span
+                  v-if="!r.vendorPrefixes.length"
+                  class="text-xs text-muted"
+                >any vendor</span>
+              </div>
+              <UBadge
+                :color="statusOf(r).color"
+                variant="subtle"
+                size="sm"
+                :icon="statusOf(r).icon"
+                :label="statusOf(r).label"
+                class="justify-self-start max-w-full"
+                :ui="{ label: 'truncate' }"
+              />
+              <div class="flex justify-end gap-0.5">
+                <UButton
+                  icon="i-lucide-chevron-up"
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  aria-label="Move up"
+                  :disabled="i === 0"
+                  @click.stop="move(r.uid, -1)"
+                />
+                <UButton
+                  icon="i-lucide-chevron-down"
+                  size="xs"
+                  color="neutral"
+                  variant="ghost"
+                  aria-label="Move down"
+                  :disabled="i === form.rows.length - 1"
+                  @click.stop="move(r.uid, 1)"
+                />
+                <UButton
+                  v-if="!(r.kind === 'folder' && r.folderId === 'local')"
+                  icon="i-lucide-trash-2"
+                  size="xs"
+                  color="error"
+                  variant="ghost"
+                  aria-label="Remove"
+                  @click.stop="onRemove(r.uid)"
+                />
+              </div>
+            </div>
+            <div
+              v-if="!form.rows.length"
+              class="py-10 text-center text-sm text-muted"
+            >
+              No registries. Enrich would reject every self-describing event. Add the linked directory and Iglu Central.
+            </div>
+          </div>
+        </UCard>
 
-          <UCard variant="subtle">
+        <div class="grid gap-5 lg:grid-cols-3">
+          <UCard
+            variant="subtle"
+            :ui="{ header: 'py-3', body: 'py-4' }"
+          >
             <template #header>
-              <h3 class="font-semibold">
+              <h3 class="font-semibold leading-tight">
                 Lookup order
               </h3>
               <p class="text-xs text-muted">
                 Prefix matches first, then everything else, each by priority.
               </p>
             </template>
-            <UFormField
-              label="For vendor"
+            <UInput
+              v-model="previewVendor"
               size="sm"
-            >
-              <UInput
-                v-model="previewVendor"
-                size="sm"
-                class="w-full font-mono"
-              />
-            </UFormField>
+              class="w-full font-mono"
+              icon="i-lucide-building-2"
+              placeholder="vendor, e.g. com.acme"
+            />
             <ol class="mt-3 flex flex-col gap-1.5 text-sm">
               <li
                 v-for="(r, i) in ordered"
-                :key="i"
+                :key="r.uid"
                 class="flex items-center gap-2"
               >
-                <UBadge
-                  color="neutral"
-                  variant="outline"
-                  size="sm"
-                  :label="String(i + 1)"
-                />
+                <span class="w-5 text-xs text-muted text-right">{{ i + 1 }}.</span>
                 <UIcon
                   :name="KIND_ICON[r.kind]"
-                  class="text-muted shrink-0"
+                  class="text-muted shrink-0 size-4"
                 />
                 <span class="truncate">{{ r.name || '(unnamed)' }}</span>
                 <UBadge
@@ -418,20 +522,23 @@ const KIND_ICON: Record<Kind, string> = { folder: 'i-lucide-folder-open', snowca
                   color="primary"
                   variant="subtle"
                   size="sm"
-                  label="prefix match"
+                  label="prefix"
                 />
-                <span class="text-xs text-muted ml-auto">p{{ r.priority }}</span>
+                <span class="text-xs text-muted ml-auto font-mono">#{{ form.rows.indexOf(r) + 1 }}</span>
               </li>
             </ol>
           </UCard>
 
-          <UCard variant="subtle">
+          <UCard
+            variant="subtle"
+            :ui="{ header: 'py-3', body: 'py-4' }"
+          >
             <template #header>
-              <h3 class="font-semibold">
+              <h3 class="font-semibold leading-tight">
                 Resolve tester
               </h3>
               <p class="text-xs text-muted">
-                Walks the saved registries exactly like enrich would and shows who answers.
+                Walks the saved registries like enrich does and shows who answers.
               </p>
             </template>
             <div class="flex gap-2">
@@ -445,311 +552,95 @@ const KIND_ICON: Record<Kind, string> = { folder: 'i-lucide-folder-open', snowca
               <UButton
                 icon="i-lucide-search"
                 size="sm"
-                label="Resolve"
                 :loading="testing"
                 @click="runTest"
               />
             </div>
             <div
               v-if="result"
-              class="mt-3 flex flex-col gap-2"
+              class="mt-3 flex flex-col gap-1.5"
             >
               <UAlert
                 :color="result.found ? 'success' : 'error'"
                 variant="subtle"
                 :icon="result.found ? 'i-lucide-circle-check' : 'i-lucide-circle-x'"
                 :title="result.found ? `Resolved by ${result.resolvedBy}` : 'Not found in any registry'"
+                :ui="{ root: 'py-2' }"
               />
               <div
                 v-for="(a, i) in result.attempts"
                 :key="i"
-                class="rounded-md border border-default p-2 text-xs flex flex-col gap-1"
+                class="flex items-center gap-2 text-xs"
               >
-                <div class="flex items-center gap-2">
-                  <UBadge
-                    :color="statusColor(a.status)"
-                    variant="subtle"
-                    size="sm"
-                    :label="a.status"
-                  />
-                  <span class="font-medium">{{ a.registry }}</span>
-                  <span
-                    v-if="a.httpStatus"
-                    class="text-muted"
-                  >HTTP {{ a.httpStatus }}</span>
-                  <span
-                    v-if="a.durationMs != null"
-                    class="text-muted ml-auto"
-                  >{{ a.durationMs }} ms</span>
-                </div>
+                <UBadge
+                  :color="statusColor(a.status)"
+                  variant="subtle"
+                  size="sm"
+                  :label="a.status"
+                  class="w-20 justify-center"
+                />
+                <span class="truncate">{{ a.registry }}</span>
                 <span
-                  v-if="a.uri"
-                  class="font-mono text-muted break-all"
-                >{{ a.uri }}</span>
-                <span
-                  v-if="a.message"
-                  class="text-muted"
-                >{{ a.message }}</span>
+                  v-if="a.durationMs != null && a.status !== 'skipped'"
+                  class="text-muted ml-auto font-mono"
+                >{{ a.durationMs }} ms</span>
               </div>
             </div>
           </UCard>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <h3 class="font-semibold">
-            Registries
-          </h3>
-          <span class="text-xs text-muted font-mono">{{ data?.path }}</span>
-          <UDropdownMenu
-            class="ml-auto"
-            :items="[
-              { label: 'Linked directory (this console)', icon: 'i-lucide-folder-open', disabled: hasLocal, onSelect: () => add('local') },
-              { label: 'Another folder', icon: 'i-lucide-folder-plus', onSelect: () => add('folder') },
-              { label: 'SnowcatCloud Schema Registry (API key)', icon: 'i-lucide-cloud', disabled: form.rows.some(r => r.kind === 'snowcatcloud'), onSelect: () => add('snowcatcloud') },
-              { label: 'Iglu Central', icon: 'i-lucide-globe', onSelect: () => add('iglu-central') },
-              { label: 'Custom HTTP registry', icon: 'i-lucide-server', onSelect: () => add('http') },
-              { label: 'Embedded (inside enrich)', icon: 'i-lucide-package', onSelect: () => add('embedded') }
-            ]"
-          >
-            <UButton
-              icon="i-lucide-plus"
-              label="Add registry"
-              size="sm"
-            />
-          </UDropdownMenu>
-        </div>
 
-        <div class="flex flex-col gap-3">
           <UCard
-            v-for="(r, i) in form.rows"
-            :key="i"
             variant="subtle"
-            :ui="{ body: 'p-4 sm:p-4' }"
+            :ui="{ header: 'py-3', body: 'py-4' }"
           >
-            <div class="grid gap-4 items-start md:grid-cols-2 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,2fr)_minmax(0,1.2fr)_8rem_2.5rem]">
-              <div class="flex flex-col gap-3">
-                <UFormField
-                  label="Name"
-                  size="sm"
-                >
-                  <UInput
-                    v-model="r.name"
-                    size="sm"
-                    class="w-full"
-                    @update:model-value="onNameChange(r)"
-                  />
-                </UFormField>
-                <UFormField
-                  label="Type"
-                  size="sm"
-                >
-                  <USelect
-                    v-model="r.kind"
-                    :items="kindItems"
-                    :icon="KIND_ICON[r.kind]"
-                    size="sm"
-                    class="w-full"
-                    :disabled="r.kind === 'folder' && r.folderId === 'local'"
-                    @update:model-value="onKindChange(r)"
-                  />
-                </UFormField>
-              </div>
-
-              <div class="flex flex-col gap-3 min-w-0">
-                <template v-if="r.kind === 'folder'">
-                  <UFormField
-                    label="Folder"
-                    size="sm"
-                    :help="r.folderId === 'local' ? 'The devkit schema directory (SCHEMAS_DIR in .env).' : 'Any folder under your home directory. Browse to pick it.'"
-                  >
-                    <div class="flex gap-1.5">
-                      <UInput
-                        :model-value="r.folderId === 'local' ? (r.display ?? r.path) : (r.display ?? r.path)"
-                        size="sm"
-                        class="w-full font-mono"
-                        readonly
-                        :placeholder="r.folderId === 'local' ? '' : 'Pick a folder…'"
-                      />
-                      <UButton
-                        v-if="r.folderId !== 'local'"
-                        size="sm"
-                        color="neutral"
-                        variant="subtle"
-                        icon="i-lucide-folder-search"
-                        label="Browse"
-                        @click="browseFor(r)"
-                      />
-                      <UButton
-                        size="sm"
-                        color="neutral"
-                        variant="subtle"
-                        icon="i-lucide-scan-search"
-                        label="Check"
-                        :loading="r.checking"
-                        :disabled="!r.path"
-                        @click="check(r)"
-                      />
-                    </div>
-                  </UFormField>
-                  <p class="text-[11px] font-mono text-muted break-all">
-                    Served at {{ folderUrl(r.folderId) }}
-                  </p>
-                  <UAlert
-                    v-if="r.check"
-                    :color="r.check.count ? 'success' : r.check.exists ? 'warning' : 'error'"
-                    variant="subtle"
-                    :icon="r.check.count ? 'i-lucide-circle-check' : 'i-lucide-triangle-alert'"
-                    :title="r.check.message"
-                    :description="r.check.sample.length ? r.check.sample.join('\n') : undefined"
-                    :ui="{ description: 'font-mono text-[11px] whitespace-pre-line' }"
-                  />
-                </template>
-                <template v-else-if="r.kind === 'snowcatcloud'">
-                  <UFormField
-                    label="API key"
-                    size="sm"
-                  >
-                    <div class="flex gap-1.5">
-                      <UInput
-                        v-model="r.apikey"
-                        size="sm"
-                        class="w-full font-mono"
-                        :type="r.showKey ? 'text' : 'password'"
-                        :placeholder="r.keySaved ? 'Key saved in the console. Paste a new one to replace it.' : 'Paste the key from your SnowcatCloud account'"
-                        @keydown.enter="checkKey(r)"
-                      >
-                        <template #trailing>
-                          <UButton
-                            :icon="r.showKey ? 'i-lucide-eye-off' : 'i-lucide-eye'"
-                            size="xs"
-                            color="neutral"
-                            variant="link"
-                            :aria-label="r.showKey ? 'Hide key' : 'Show key'"
-                            @click="r.showKey = !r.showKey"
-                          />
-                        </template>
-                      </UInput>
-                      <UButton
-                        size="sm"
-                        color="neutral"
-                        variant="subtle"
-                        icon="i-lucide-shield-check"
-                        label="Check key"
-                        :loading="r.keyChecking"
-                        :disabled="!r.apikey.trim() && !r.keySaved"
-                        @click="checkKey(r)"
-                      />
-                    </div>
-                  </UFormField>
-                  <p class="text-[11px] text-muted">
-                    Enrich reaches <span class="font-mono">{{ snowcatUrl }}</span> through this console, and the key stays in the console's local store, never in resolver.json. No account yet?
-                    <a
-                      :href="snowcatSignup"
-                      target="_blank"
-                      class="text-primary hover:underline"
-                    >Get one at SnowcatCloud</a>.
-                  </p>
-                  <UAlert
-                    v-if="r.keyCheck"
-                    :color="r.keyCheck.ok ? 'success' : r.keyCheck.authorized ? 'warning' : 'error'"
-                    variant="subtle"
-                    :icon="r.keyCheck.ok ? 'i-lucide-shield-check' : r.keyCheck.authorized ? 'i-lucide-triangle-alert' : 'i-lucide-shield-x'"
-                    :title="r.keyCheck.message"
-                    :description="r.keyCheck.sample.length ? r.keyCheck.sample.join('\n') : undefined"
-                    :ui="{ description: 'font-mono text-[11px] whitespace-pre-line' }"
-                    :actions="r.keyCheck.vendors.length ? [{ label: `Use ${r.keyCheck.vendors.length === 1 ? 'vendor' : 'vendors'} as prefixes`, icon: 'i-lucide-tags', color: 'neutral', variant: 'subtle', onClick: () => useVendors(r) }] : undefined"
-                  />
-                </template>
-                <template v-else-if="r.kind === 'http'">
-                  <UFormField
-                    label="Registry URI"
-                    size="sm"
-                    help="Enrich requests {uri}/schemas/{vendor}/{name}/jsonschema/{version}"
-                  >
-                    <UInput
-                      v-model="r.uri"
-                      size="sm"
-                      class="w-full font-mono"
-                      placeholder="https://iglu.example.com/api"
-                    />
-                  </UFormField>
-                  <UFormField
-                    label="API key (optional)"
-                    size="sm"
-                  >
-                    <UInput
-                      v-model="r.apikey"
-                      size="sm"
-                      class="w-full font-mono"
-                      type="password"
-                      placeholder="Sent as the apikey header"
-                    />
-                  </UFormField>
-                </template>
-                <template v-else>
-                  <UFormField
-                    label="Classpath"
-                    size="sm"
-                    help="Schemas bundled inside the enrich JAR. Nothing to check from here."
-                  >
-                    <UInput
-                      v-model="r.embeddedPath"
-                      size="sm"
-                      class="w-full font-mono"
-                      placeholder="/iglu-client-embedded"
-                    />
-                  </UFormField>
-                </template>
-              </div>
-
+            <template #header>
+              <h3 class="font-semibold leading-tight">
+                Cache
+              </h3>
+              <p class="text-xs text-muted">
+                Zero keeps schema edits live. Turn it on only for load tests.
+              </p>
+            </template>
+            <div class="grid grid-cols-2 gap-3">
               <UFormField
-                label="Vendor prefixes"
+                label="Cache size"
                 size="sm"
-                help="Tried first for schemas whose vendor starts with one of these. Leave empty to be a fallback for every vendor."
-              >
-                <UInputTags
-                  v-model="r.vendorPrefixes"
-                  size="sm"
-                  class="w-full"
-                  placeholder="com.acme"
-                />
-              </UFormField>
-
-              <UFormField
-                label="Priority"
-                size="sm"
-                help="Lower wins"
               >
                 <UInputNumber
-                  v-model="r.priority"
-                  size="sm"
+                  v-model="form.cacheSize"
                   :min="0"
+                  size="sm"
                   class="w-full"
                 />
               </UFormField>
-
-              <UButton
-                icon="i-lucide-trash-2"
-                color="error"
-                variant="ghost"
+              <UFormField
+                label="TTL (seconds)"
                 size="sm"
-                class="xl:mt-6 justify-self-end"
-                aria-label="Remove registry"
-                @click="remove(i)"
-              />
+              >
+                <UInputNumber
+                  v-model="form.cacheTtl"
+                  :min="0"
+                  size="sm"
+                  class="w-full"
+                />
+              </UFormField>
             </div>
+            <p class="text-[11px] text-muted mt-2">
+              {{ form.cacheSize ? `Enrich caches up to ${form.cacheSize} lookups${form.cacheTtl ? ` for ${form.cacheTtl}s` : ''}. Schema edits show up only after that.` : 'No cache: every lookup fetches the schema, so edits are picked up on the next event.' }}
+            </p>
           </UCard>
-          <UEmpty
-            v-if="!form.rows.length && data"
-            icon="i-lucide-library"
-            title="No registries"
-            description="Enrich would reject every self-describing event. Add the linked directory and Iglu Central."
-          />
         </div>
+
+        <p class="text-[11px] text-muted font-mono">
+          {{ data?.path }}
+        </p>
       </div>
-      <FolderBrowser
-        v-model:open="browseOpen"
-        :start="browseTarget?.path"
-        @select="onPicked"
+
+      <RegistryEditor
+        v-model:open="editorOpen"
+        :row="editing"
+        :context="context"
+        @apply="onApply"
+        @remove="onRemove"
       />
     </template>
   </UDashboardPanel>

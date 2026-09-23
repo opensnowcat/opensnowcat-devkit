@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { StreamEvent } from '~/composables/useEventStream'
 
-useHead({ title: 'Live stream · OpenSnowcat Console' })
+useHead({ title: 'Live Stream · OpenSnowcat Console' })
 
 const { visible, stats, connected, paused, pendingWhilePaused, connect, pause, resume, clear } = useEventStream()
 onMounted(connect)
@@ -77,7 +77,7 @@ const counts = computed(() => {
   <UDashboardPanel id="stream">
     <template #header>
       <UDashboardNavbar
-        title="Live stream"
+        title="Live Stream"
         icon="i-lucide-radio"
       >
         <template #leading>

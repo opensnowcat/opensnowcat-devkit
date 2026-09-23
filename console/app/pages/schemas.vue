@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { TreeItem } from '@nuxt/ui'
 
-useHead({ title: 'Schemas · OpenSnowcat Console' })
+useHead({ title: 'Schema Editor · OpenSnowcat Console' })
 
 interface Ref { vendor: string, name: string, format: string, version: string }
 interface Lint { valid: boolean, errors: Array<{ message: string, path?: string }>, warnings: Array<{ message: string, path?: string }> }
@@ -237,7 +237,7 @@ watch(folders, (f) => {
   <UDashboardPanel id="schemas">
     <template #header>
       <UDashboardNavbar
-        title="Schemas"
+        title="Schema Editor"
         icon="i-lucide-file-json"
       >
         <template #leading>
@@ -307,7 +307,7 @@ watch(folders, (f) => {
               to="/registries"
               class="text-primary hover:underline"
             >
-              Manage folders on Schema registries
+              Manage folders in Schema Registry
             </NuxtLink>
           </div>
         </aside>

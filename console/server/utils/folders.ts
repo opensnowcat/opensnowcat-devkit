@@ -23,6 +23,7 @@ export interface FolderInfo extends FolderEntry {
   primary: boolean
   exists: boolean
   display: string
+  count: number
 }
 
 /** Where the console is allowed to browse: the host home mount (or the real home when not containerised) and the linked directory. */
@@ -174,9 +175,11 @@ export async function folderRoot(id: string): Promise<string> {
 
 export async function allFolders(): Promise<FolderInfo[]> {
   const cfg = consoleConfig()
-  const out: FolderInfo[] = [{ id: LOCAL_FOLDER_ID, path: cfg.schemasDir, root: schemasRoot(), url: folderRegistryUrl(LOCAL_FOLDER_ID), primary: true, exists: existsSync(schemasRoot()), display: cfg.hostHomeMount ? '(linked directory, SCHEMAS_DIR in .env)' : cfg.schemasDir }]
+  const localExists = existsSync(schemasRoot())
+  const out: FolderInfo[] = [{ id: LOCAL_FOLDER_ID, path: cfg.schemasDir, root: schemasRoot(), url: folderRegistryUrl(LOCAL_FOLDER_ID), primary: true, exists: localExists, display: cfg.hostHomeMount ? 'Linked directory (schemas/)' : cfg.schemasDir, count: localExists ? (await listSchemas(schemasRoot())).count : 0 }]
   for (const f of await readFolders()) {
-    out.push({ ...f, root: resolveRoot(f.path), url: folderRegistryUrl(f.id), primary: false, exists: existsSync(f.path) && statSync(f.path).isDirectory(), display: toDisplayPath(f.path) })
+    const exists = existsSync(f.path) && statSync(f.path).isDirectory()
+    out.push({ ...f, root: resolveRoot(f.path), url: folderRegistryUrl(f.id), primary: false, exists, display: toDisplayPath(f.path), count: exists ? (await listSchemas(resolveRoot(f.path))).count : 0 })
   }
   return out
 }

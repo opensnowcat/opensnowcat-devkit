@@ -25,8 +25,8 @@ The console runs as a container next to the pipeline and talks to Kafka directly
 | Page | What you do there |
 |---|---|
 | **Live stream** | One timeline of good and bad events, tailed from Kafka as enrich writes them. Filter by good/bad, app id, event, schema, or bad row type. Click an event for entities, atomic fields, failure details, and the raw payload. Send test events from the toolbar. |
-| **Schemas** | Browse every folder registry, edit schemas in place with igluctl-style validation, create new ones, bump versions, test sample data. Saves are live: enrich resolves the new file on the next event. |
-| **Schema registries** | The Iglu resolver as a form: folders served by the console, the SnowcatCloud Schema Registry (paste an API key, click Check key to confirm it is authorized and pulls schemas), HTTP registries such as Iglu Central or your own Iglu Server, and embedded ones, with priorities, vendor prefixes, and cache. Saving restarts enrich for you. A resolve tester shows which registry answers for any Iglu URI. |
+| **Schema Editor** | Browse every folder registry, edit schemas in place with igluctl-style validation, create new ones, bump versions, test sample data. Saves are live: enrich resolves the new file on the next event. |
+| **Schema Registry** | The Iglu resolver as a form: folders served by the console, the SnowcatCloud Schema Registry (paste an API key, click Check key to confirm it is authorized and pulls schemas), HTTP registries such as Iglu Central or your own Iglu Server, and embedded ones, with priorities, vendor prefixes, and cache. Saving restarts enrich for you. A resolve tester shows which registry answers for any Iglu URI. |
 | **Expose** | Start a Cloudflare quick tunnel with one click to get an HTTPS URL for the collector, with a QR code for phones, or follow the instructions to run cloudflared yourself. Copy a tracker snippet pointed at the active URL. |
 | **Pipeline** | Container status, restart enrich/collector/Bento, tail logs, topic offsets, and consumer groups. |
 
@@ -34,7 +34,7 @@ The console runs as a container next to the pipeline and talks to Kafka directly
 
 Your schema directory is mounted into the console, which serves it to enrich as a static Iglu registry at `http://console:3000/iglu`. The devkit ships with the resolver cache at zero, so every edit is picked up immediately, no restart, no cache flush. Registry and enrichment config changes still need an enrich restart, and the console does that when you save on the Linking page.
 
-The default directory is [`schemas/`](schemas/) in this repository, laid out the Iglu way: `<vendor>/<name>/jsonschema/<model>-<revision>-<addition>`. Point it at your own directory by copying `.env.example` to `.env` and setting `SCHEMAS_DIR`. Any other folder under your home directory can be added as a registry from the Schema registries page: Add registry, Another folder, Browse, pick it. The console container mounts your home directory for this; set `HOST_HOME` in `.env` to expose a narrower parent instead.
+The default directory is [`schemas/`](schemas/) in this repository, laid out the Iglu way: `<vendor>/<name>/jsonschema/<model>-<revision>-<addition>`. Point it at your own directory by copying `.env.example` to `.env` and setting `SCHEMAS_DIR`. Any other folder under your home directory can be added as a registry from the Schema Registry page: Add registry, Another folder, Browse, pick it. The console container mounts your home directory for this; set `HOST_HOME` in `.env` to expose a narrower parent instead.
 
 ### Console image
 
