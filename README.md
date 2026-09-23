@@ -26,7 +26,7 @@ The console runs as a container next to the pipeline and talks to Kafka directly
 |---|---|
 | **Live stream** | One timeline of good and bad events, tailed from Kafka as enrich writes them. Filter by good/bad, app id, event, schema, or bad row type. Click an event for entities, atomic fields, failure details, and the raw payload. Send test events from the toolbar. |
 | **Schemas** | Browse every folder registry, edit schemas in place with igluctl-style validation, create new ones, bump versions, test sample data. Saves are live: enrich resolves the new file on the next event. |
-| **Schema registries** | The Iglu resolver as a form: folders served by the console, HTTP registries such as Iglu Central or your own Iglu Server, embedded ones, with priorities, vendor prefixes, and cache. Saving restarts enrich for you. A resolve tester shows which registry answers for any Iglu URI. |
+| **Schema registries** | The Iglu resolver as a form: folders served by the console, the SnowcatCloud Schema Registry (paste an API key, click Check key to confirm it is authorized and pulls schemas), HTTP registries such as Iglu Central or your own Iglu Server, and embedded ones, with priorities, vendor prefixes, and cache. Saving restarts enrich for you. A resolve tester shows which registry answers for any Iglu URI. |
 | **Expose** | Start a Cloudflare quick tunnel with one click to get an HTTPS URL for the collector, with a QR code for phones, or follow the instructions to run cloudflared yourself. Copy a tracker snippet pointed at the active URL. |
 | **Pipeline** | Container status, restart enrich/collector/Bento, tail logs, topic offsets, and consumer groups. |
 

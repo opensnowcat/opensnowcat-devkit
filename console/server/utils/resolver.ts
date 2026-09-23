@@ -4,6 +4,7 @@ import { consoleConfig } from './config'
 import { parseIgluUri } from './enriched'
 import { readSchema, validateRef } from './schemas'
 import { folderIdFromUrl, folderRoot } from './folders'
+import { fetchFromSnowcat, isSnowcatProxyUrl, snowcatRegistryUrl } from './snowcat'
 
 export interface RegistryConnection {
   http?: { uri: string, apikey?: string }
@@ -133,6 +134,27 @@ export async function resolveTest(schemaUri: string): Promise<ResolveResult> {
     const base = reg.connection.http!.uri
     const folderId = folderIdFromUrl(base)
     const started = Date.now()
+    if (isSnowcatProxyUrl(base)) {
+      try {
+        const up = await fetchFromSnowcat(`/schemas/${key.vendor}/${key.name}/${key.format}/${key.version}`)
+        const durationMs = Date.now() - started
+        if (up.status >= 200 && up.status < 300) {
+          found = true
+          resolvedBy = reg.name
+          schema = JSON.parse(up.body)
+          attempts.push({ registry: reg.name, uri: `${snowcatRegistryUrl()}/schemas/${key.vendor}/${key.name}/${key.format}/${key.version}`, kind: 'http', status: 'found', httpStatus: up.status, durationMs, matchedPrefix, message: 'Via the console with the saved SnowcatCloud key' })
+        } else {
+          let msg: string | undefined
+          try {
+            msg = (JSON.parse(up.body) as { message?: string }).message
+          } catch { /* ignore */ }
+          attempts.push({ registry: reg.name, uri: `${snowcatRegistryUrl()}/schemas/${key.vendor}/${key.name}/${key.format}/${key.version}`, kind: 'http', status: up.status === 404 ? 'not-found' : 'error', httpStatus: up.status, durationMs, matchedPrefix, message: msg })
+        }
+      } catch (e) {
+        attempts.push({ registry: reg.name, uri: snowcatRegistryUrl(), kind: 'http', status: 'error', durationMs: Date.now() - started, matchedPrefix, message: (e as Error).message ?? String(e) })
+      }
+      continue
+    }
     if (folderId) {
       try {
         const file = await readSchema(await folderRoot(folderId), validateRef(key))

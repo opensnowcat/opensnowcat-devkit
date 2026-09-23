@@ -46,7 +46,9 @@ export default defineNuxtConfig({
     public: {
       // Override with NUXT_PUBLIC_<KEY>
       collectorPublicUrl: 'http://localhost:8080',
-      consolePublicUrl: 'http://localhost:8082'
+      consolePublicUrl: 'http://localhost:8082',
+      snowcatRegistryUrl: 'https://registry.ops.snowcatcloud.com/api',
+      snowcatSignupUrl: 'https://www.snowcatcloud.com/?utm_source=opensnowcat-console&utm_medium=registry'
     }
   },
 
