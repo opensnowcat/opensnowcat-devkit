@@ -173,12 +173,8 @@ export function summarizeBadRow(raw: string): BadRowSummary {
     eventName = typeof enriched.event_name === 'string' ? enriched.event_name : (typeof enriched.event === 'string' ? enriched.event : null)
     eventId = typeof enriched.event_id === 'string' ? enriched.event_id : null
     platform = typeof enriched.platform === 'string' ? enriched.platform : null
-    if (!eventName && typeof enriched.unstruct_event === 'string') {
-      try {
-        const ue = JSON.parse(enriched.unstruct_event)
-        const s = isObj(ue) && isObj(ue.data) && typeof ue.data.schema === 'string' ? ue.data.schema : null
-        eventName = s ? parseIgluUri(s)?.name ?? null : null
-      } catch { /* ignore */ }
+    if ((!eventName || eventName === 'unstruct') && typeof enriched.unstruct_event === 'string') {
+      eventName = unstructNameFromJson(enriched.unstruct_event) ?? eventName
     }
   }
   if (rawPayload) {
@@ -187,7 +183,7 @@ export function summarizeBadRow(raw: string): BadRowSummary {
     platform = platform ?? param(params, 'p')
     eventId = eventId ?? param(params, 'eid')
     const e = param(params, 'e')
-    if (!eventName && e) eventName = e === 'ue' ? (unstructNameFromJson(param(params, 'ue_pr')) ?? decodeUePx(param(params, 'ue_px')) ?? 'unstruct') : (EVENT_CODES[e] ?? e)
+    if ((!eventName || eventName === 'unstruct') && e) eventName = e === 'ue' ? (unstructNameFromJson(param(params, 'ue_pr')) ?? decodeUePx(param(params, 'ue_px')) ?? 'unstruct') : (EVENT_CODES[e] ?? e)
     if (!eventName && typeof rawPayload.vendor === 'string') eventName = `${rawPayload.vendor}/${String(rawPayload.version ?? '')}`
   }
   const ts = isObj(failure) && typeof failure.timestamp === 'string' ? Date.parse(failure.timestamp) : NaN
