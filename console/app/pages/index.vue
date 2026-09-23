@@ -3,7 +3,8 @@ import type { StreamEvent } from '~/composables/useEventStream'
 
 useHead({ title: 'Live Stream · OpenSnowcat Console' })
 
-const { visible, stats, connected, paused, pendingWhilePaused, connect, pause, resume, clear } = useEventStream()
+const { visible, stats, paused, pendingWhilePaused, ready, readiness, connect, pause, resume, clear } = useEventStream()
+const startedAgo = computed(() => stats.value ? Date.now() - stats.value.startedAt : 0)
 onMounted(connect)
 
 const kindFilter = ref<'all' | 'good' | 'bad'>('all')
@@ -117,11 +118,14 @@ const counts = computed(() => {
               @click="clear"
             />
           </UTooltip>
-          <UButton
-            icon="i-lucide-send"
-            label="Send events"
-            @click="sendOpen = true"
-          />
+          <UTooltip :text="ready ? 'Send test events to the collector' : `${readiness.label}…`">
+            <UButton
+              icon="i-lucide-send"
+              label="Send events"
+              :disabled="!ready"
+              @click="sendOpen = true"
+            />
+          </UTooltip>
         </template>
       </UDashboardNavbar>
       <UDashboardToolbar :ui="{ root: 'flex-wrap gap-y-2 h-auto min-h-12 py-2', left: 'flex-wrap gap-y-2', right: 'flex-wrap gap-y-2' }">
@@ -205,18 +209,56 @@ const counts = computed(() => {
         class="h-full flex items-center justify-center"
       >
         <UEmpty
-          :icon="connected ? (stats?.kafka.connected ? 'i-lucide-radio' : 'i-lucide-unplug') : 'i-lucide-loader-circle'"
-          :title="hasFilters ? 'Nothing matches these filters' : (stats?.kafka.connected ? 'Waiting for events' : 'Connecting to Kafka')"
-          :description="hasFilters ? 'Loosen the filters or send a few events.' : (stats?.kafka.error ? stats.kafka.error : 'Good and bad events appear here as enrich writes them. Send a few test events to get started.')"
+          v-if="hasFilters"
+          icon="i-lucide-filter"
+          title="Nothing matches these filters"
+          description="Loosen the filters or send a few events."
         >
           <template #actions>
             <UButton
-              v-if="hasFilters"
               label="Reset filters"
               color="neutral"
               variant="subtle"
               @click="resetFilters"
             />
+          </template>
+        </UEmpty>
+        <UEmpty
+          v-else-if="!ready"
+          :title="`${readiness.label}…`"
+          description="The pipeline is starting. Kafka, the collector and enrich take a few seconds on a fresh start."
+        >
+          <template #leading>
+            <div class="flex items-center justify-center size-12 rounded-full bg-elevated">
+              <UIcon
+                name="i-lucide-loader-circle"
+                class="size-6 animate-spin text-primary"
+              />
+            </div>
+          </template>
+          <template #actions>
+            <UButton
+              icon="i-lucide-send"
+              label="Send events"
+              disabled
+            />
+          </template>
+          <template #footer>
+            <p
+              v-if="readiness.detail && startedAgo > 45_000"
+              class="text-xs text-muted font-mono max-w-md"
+            >
+              {{ readiness.detail }}
+            </p>
+          </template>
+        </UEmpty>
+        <UEmpty
+          v-else
+          icon="i-lucide-radio"
+          title="Waiting for events"
+          description="Good and bad events appear here as enrich writes them. Send a few test events to get started."
+        >
+          <template #actions>
             <UButton
               icon="i-lucide-send"
               label="Send events"

@@ -23,7 +23,7 @@ const snowcatHost = (() => {
   }
 })()
 
-const { data, refresh, pending } = await useFetch<{ doc: ResolverDoc, path: string, consoleRegistryUrl: string, folders: FolderInfo[], snowcat: SnowcatInfo }>('/api/resolver', { server: false, lazy: true })
+const { data, refresh, pending } = await useFetch<{ doc: ResolverDoc, path: string, consoleRegistryUrl: string, folders: FolderInfo[], snowcat: SnowcatInfo }>('/api/resolver', { server: false, lazy: true, getCachedData: () => undefined })
 
 const base = computed(() => data.value?.consoleRegistryUrl ?? 'http://console:3000/iglu')
 const snowcatProxy = computed(() => data.value?.snowcat.proxyUrl ?? '')

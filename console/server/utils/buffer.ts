@@ -36,6 +36,8 @@ export interface StreamStats {
   lastEventAt: number | null
   startedAt: number
   kafka: { connected: boolean, error: string | null, brokers: string[], topics: string[] }
+  collector: { ready: boolean, error: string | null, checkedAt: number | null }
+  ready: boolean
 }
 
 const CAPACITY = 3000
@@ -52,6 +54,7 @@ class EventBuffer extends EventEmitter {
   lastEventAt: number | null = null
   readonly startedAt = Date.now()
   kafka: StreamStats['kafka'] = { connected: false, error: null, brokers: [], topics: [] }
+  collector: StreamStats['collector'] = { ready: false, error: null, checkedAt: null }
 
   push(partial: Omit<StreamEvent, 'seq' | 'id' | 'receivedAt'>) {
     const seq = ++this.seq
@@ -103,7 +106,9 @@ class EventBuffer extends EventEmitter {
       badPerSecond: Math.round((b / (RATE_WINDOW_MS / 1000)) * 10) / 10,
       lastEventAt: this.lastEventAt,
       startedAt: this.startedAt,
-      kafka: this.kafka
+      kafka: this.kafka,
+      collector: this.collector,
+      ready: this.kafka.connected && this.collector.ready
     }
   }
 }

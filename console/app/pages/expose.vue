@@ -4,8 +4,8 @@ import type { ConsoleInfo, TunnelInfo } from '~/types/api'
 useHead({ title: 'Expose · OpenSnowcat Console' })
 
 const toast = useToast()
-const { data: info } = await useFetch<ConsoleInfo>('/api/info', { server: false, lazy: true })
-const { data: tunnel, refresh: refreshTunnel } = await useFetch<TunnelInfo>('/api/tunnel/status', { server: false, lazy: true })
+const { data: info } = await useFetch<ConsoleInfo>('/api/info', { server: false, lazy: true, getCachedData: () => undefined })
+const { data: tunnel, refresh: refreshTunnel } = await useFetch<TunnelInfo>('/api/tunnel/status', { server: false, lazy: true, getCachedData: () => undefined })
 
 const busy = ref(false)
 async function start() {
@@ -64,6 +64,7 @@ async function copy(text: string, what: string) {
   toast.add({ title: ok ? `${what} copied` : 'Copy failed', color: ok ? 'success' : 'error' })
 }
 const sendOpen = ref(false)
+const { ready } = useEventStream()
 </script>
 
 <template>
@@ -82,6 +83,7 @@ const sendOpen = ref(false)
             color="neutral"
             variant="subtle"
             label="Send events"
+            :disabled="!ready"
             @click="sendOpen = true"
           />
         </template>

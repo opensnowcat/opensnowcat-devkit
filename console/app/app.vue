@@ -23,8 +23,9 @@ onMounted(connect)
 
 const kafkaState = computed(() => {
   if (!connected.value) return { label: 'Console offline', color: 'error' as const }
-  if (stats.value?.kafka.connected) return { label: 'Kafka connected', color: 'success' as const }
-  return { label: stats.value?.kafka.error ? 'Kafka error' : 'Kafka connecting', color: 'warning' as const }
+  if (!stats.value?.kafka.connected) return { label: 'Waiting for Kafka', color: 'warning' as const }
+  if (!stats.value?.collector.ready) return { label: 'Waiting for collector', color: 'warning' as const }
+  return { label: 'Pipeline ready', color: 'success' as const }
 })
 </script>
 

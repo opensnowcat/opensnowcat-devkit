@@ -14,7 +14,7 @@ const router = useRouter()
 const toast = useToast()
 const hydrated = useHydrated()
 
-const { data: folders, refresh: refreshListing, pending: listingPending } = await useFetch<{ folders: Folder[], count: number }>('/api/schemas', { server: false, lazy: true })
+const { data: folders, refresh: refreshListing, pending: listingPending } = await useFetch<{ folders: Folder[], count: number }>('/api/schemas', { server: false, lazy: true, getCachedData: () => undefined })
 
 const current = ref<(Ref & { folder: string }) | null>(null)
 const content = ref('')

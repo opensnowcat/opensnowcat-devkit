@@ -33,6 +33,8 @@ export interface StreamStats {
   lastEventAt: number | null
   startedAt: number
   kafka: { connected: boolean, error: string | null, brokers: string[], topics: string[] }
+  collector: { ready: boolean, error: string | null, checkedAt: number | null }
+  ready: boolean
 }
 
 const CAP = 3000
@@ -47,6 +49,14 @@ export function useEventStream() {
   const pendingWhilePaused = useState<number>('osc-pending', () => 0)
 
   const visible = computed(() => paused.value ? frozen.value : events.value)
+  /** Kafka tailing and the collector both answer: sending events will work. */
+  const ready = computed(() => connected.value && !!stats.value?.ready)
+  const readiness = computed(() => {
+    if (!connected.value) return { label: 'Connecting to the console', detail: null as string | null }
+    if (!stats.value?.kafka.connected) return { label: 'Waiting for Kafka', detail: stats.value?.kafka.error ?? null }
+    if (!stats.value?.collector.ready) return { label: 'Waiting for the collector', detail: stats.value?.collector.error ?? null }
+    return { label: 'Ready', detail: null }
+  })
 
   function append(batch: StreamEvent[]) {
     if (!batch.length) return
@@ -106,5 +116,5 @@ export function useEventStream() {
     await $fetch('/api/events/clear', { method: 'POST' })
   }
 
-  return { events, visible, stats, connected, paused, pendingWhilePaused, connect, disconnect, pause, resume, clear }
+  return { events, visible, stats, connected, paused, pendingWhilePaused, ready, readiness, connect, disconnect, pause, resume, clear }
 }

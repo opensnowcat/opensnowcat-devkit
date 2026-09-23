@@ -163,7 +163,28 @@ export async function startKafka() {
       await state.consumer?.close(true)
     } catch { /* ignore */ }
     state.consumer = null
-    await sleep(Math.min(30_000, 2_000 * Math.max(1, attempt)))
+    await sleep(Math.min(10_000, 2_000 * Math.max(1, attempt)))
+  }
+}
+
+/** Poll the collector's health endpoint so the UI only offers "Send events" when a send can succeed. */
+export function startCollectorProbe(): () => void {
+  const cfg = consoleConfig()
+  let stopped = false
+  const probe = async () => {
+    if (stopped) return
+    try {
+      const res = await fetch(`${cfg.collectorUrl}/health`, { signal: AbortSignal.timeout(3_000) })
+      eventBuffer.collector = { ready: res.ok, error: res.ok ? null : `Collector answered HTTP ${res.status}`, checkedAt: Date.now() }
+    } catch (e) {
+      eventBuffer.collector = { ready: false, error: (e as Error).name === 'TimeoutError' ? 'Collector did not answer in 3s' : ((e as Error).message ?? String(e)), checkedAt: Date.now() }
+    }
+  }
+  void probe()
+  const timer = setInterval(() => { void probe() }, eventBuffer.collector.ready ? 10_000 : 3_000)
+  return () => {
+    stopped = true
+    clearInterval(timer)
   }
 }
 

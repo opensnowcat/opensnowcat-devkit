@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const open = defineModel<boolean>('open', { default: false })
 const props = defineProps<{ defaultTarget?: string }>()
+const { ready, readiness } = useEventStream()
 const toast = useToast()
 
 const kinds = [
@@ -26,7 +27,7 @@ const form = reactive({
 })
 
 interface SchemaListing { folders: Array<{ listing: { vendors: Array<{ vendor: string, names: Array<{ name: string, versions: Array<{ uri: string }> }> }> } }> }
-const { data: schemaList } = await useFetch<SchemaListing>('/api/schemas', { lazy: true, server: false })
+const { data: schemaList } = await useFetch<SchemaListing>('/api/schemas', { lazy: true, server: false, getCachedData: () => undefined })
 const schemaOptions = computed(() => [...new Set((schemaList.value?.folders ?? []).flatMap(f => f.listing.vendors.flatMap(v => v.names.flatMap(n => n.versions.map(x => x.uri)))))])
 watch(() => props.defaultTarget, (t) => { if (t) form.target = t })
 watch(schemaOptions, (opts) => { if (!form.schema && opts.length) form.schema = opts[0]! }, { immediate: true })
@@ -74,6 +75,14 @@ async function send() {
   >
     <template #body>
       <div class="flex flex-col gap-4">
+        <UAlert
+          v-if="!ready"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-loader-circle"
+          :title="`${readiness.label}…`"
+          description="Sending is enabled once Kafka and the collector answer."
+        />
         <UFormField label="What to send">
           <URadioGroup
             v-model="form.kind"
@@ -165,6 +174,7 @@ async function send() {
         <UButton
           icon="i-lucide-send"
           :loading="sending"
+          :disabled="!ready"
           :label="`Send ${form.count}`"
           @click="send"
         />

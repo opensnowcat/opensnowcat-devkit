@@ -10,9 +10,9 @@ interface GroupInfo { id: string, state: string, members: number, protocolType: 
 
 const toast = useToast()
 const hydrated = useHydrated()
-const { data: containers, refresh: refreshContainers, pending: containersPending } = await useFetch<{ available: boolean, error: string | null, containers: ContainerStatus[] }>('/api/pipeline/containers', { server: false, lazy: true })
-const { data: topics, refresh: refreshTopics, pending: topicsPending } = await useFetch<{ ok: boolean, topics: TopicInfo[], groups: GroupInfo[], error: string | null }>('/api/pipeline/topics', { server: false, lazy: true })
-const { data: info } = await useFetch<ConsoleInfo>('/api/info', { server: false, lazy: true })
+const { data: containers, refresh: refreshContainers, pending: containersPending } = await useFetch<{ available: boolean, error: string | null, containers: ContainerStatus[] }>('/api/pipeline/containers', { server: false, lazy: true, getCachedData: () => undefined })
+const { data: topics, refresh: refreshTopics, pending: topicsPending } = await useFetch<{ ok: boolean, topics: TopicInfo[], groups: GroupInfo[], error: string | null }>('/api/pipeline/topics', { server: false, lazy: true, getCachedData: () => undefined })
+const { data: info } = await useFetch<ConsoleInfo>('/api/info', { server: false, lazy: true, getCachedData: () => undefined })
 const { stats } = useEventStream()
 
 let timer: ReturnType<typeof setInterval> | null = null
