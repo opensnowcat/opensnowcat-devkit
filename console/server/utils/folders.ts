@@ -29,9 +29,11 @@ export interface FolderInfo extends FolderEntry {
 export function browseRoots(): Array<{ label: string, path: string }> {
   const cfg = consoleConfig()
   const home = cfg.hostHomeMount || homedir()
-  const roots = [{ label: cfg.hostHomePath ? `Home (${cfg.hostHomePath})` : 'Home', path: resolve(home) }]
-  if (!resolve(cfg.schemasDir).startsWith(roots[0]!.path + sep)) roots.push({ label: 'Linked directory', path: resolve(cfg.schemasDir) })
-  return roots
+  // The linked schema directory comes first: that is where people working inside the devkit keep their schemas.
+  return [
+    { label: 'Linked directory (schemas/)', path: resolve(cfg.schemasDir) },
+    { label: cfg.hostHomePath ? `Home (${cfg.hostHomePath})` : 'Home', path: resolve(home) }
+  ]
 }
 
 /** Turn a container path into what the user knows: /host/home/x → /Users/me/x. */
