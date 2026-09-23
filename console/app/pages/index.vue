@@ -75,7 +75,10 @@ const counts = computed(() => {
 </script>
 
 <template>
-  <UDashboardPanel id="stream">
+  <UDashboardPanel
+    id="stream"
+    :ui="{ body: 'p-0 sm:p-0 gap-0' }"
+  >
     <template #header>
       <UDashboardNavbar
         title="Live Stream"
@@ -216,7 +219,7 @@ const counts = computed(() => {
     <template #body>
       <div
         v-if="!filtered.length"
-        class="h-full flex items-center justify-center"
+        class="h-full flex items-center justify-center p-4 sm:p-6"
       >
         <UEmpty
           v-if="hasFilters"
@@ -291,10 +294,7 @@ const counts = computed(() => {
           </template>
         </UEmpty>
       </div>
-      <div
-        v-else
-        class="-mx-4 sm:-mx-6 -my-4 sm:-my-6"
-      >
+      <div v-else>
         <div class="osc-row text-[11px] uppercase tracking-wider text-muted font-medium cursor-default hover:bg-transparent border-b-2 sticky top-0 bg-default z-10">
           <span>Time</span><span>Kind</span><span>App</span><span>Event</span><span>Details</span><span />
         </div>
