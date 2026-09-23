@@ -73,8 +73,11 @@ services:
     container_name: opensnowcat_console
     networks: [ appnet ]
     image: opensnowcat/opensnowcat-console:latest
+    # Built locally when the image is not present; `docker compose pull console` fetches the published one.
+    build:
+      context: ./console
     ports:
-      - "3000:3000"
+      - "8082:3000"
     volumes:
       - ${PWD}/opensnowcat:/opensnowcat
       - ${SCHEMAS_DIR:-./schemas}:/schemas
@@ -87,7 +90,7 @@ services:
       NUXT_CONSOLE_REGISTRY_URL: http://console:3000/iglu
       NUXT_TUNNEL_TARGET: http://opensnowcat_collector:8080
       NUXT_PUBLIC_COLLECTOR_PUBLIC_URL: http://localhost:8080
-      NUXT_PUBLIC_CONSOLE_PUBLIC_URL: http://localhost:3000
+      NUXT_PUBLIC_CONSOLE_PUBLIC_URL: http://localhost:8082
     restart: on-failure
     depends_on:
       - warp

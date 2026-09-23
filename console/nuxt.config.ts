@@ -43,7 +43,7 @@ export default defineNuxtConfig({
     public: {
       // Override with NUXT_PUBLIC_<KEY>
       collectorPublicUrl: 'http://localhost:8080',
-      consolePublicUrl: 'http://localhost:3000'
+      consolePublicUrl: 'http://localhost:8082'
     }
   },
 

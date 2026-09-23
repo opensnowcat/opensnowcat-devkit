@@ -11,12 +11,12 @@ Add this line to your `/etc/hosts`: `127.0.0.1  warp`
 ## Quick start
 
 ```
-make run-kafka
+make run
 ```
 
-Then open the console at http://localhost:3000. The collector listens on http://localhost:8080.
+This starts the pipeline on Apache Kafka, waits for the console to come up, and opens it at http://localhost:8082. The collector listens on http://localhost:8080. `make run-kafka` is the same thing, and `make run-warpstream` uses WarpStream instead.
 
-Prefer WarpStream (Kafka-compatible, demo limited to 4 hours)? Use `make run-warpstream` and `make warpstream-console` to get its console URL.
+WarpStream is Kafka-compatible and its demo is limited to 4 hours; `make warpstream-console` prints its cloud console URL.
 
 ## OpenSnowcat Console
 
@@ -38,13 +38,13 @@ The default directory is [`schemas/`](schemas/) in this repository, laid out the
 
 ### Console image
 
-The console is published as `opensnowcat/opensnowcat-console` on Docker Hub, built from [`console/`](console/) by GitHub Actions. To build it locally instead:
+The console is published as `opensnowcat/opensnowcat-console` on Docker Hub, built from [`console/`](console/) by GitHub Actions. Compose builds it locally the first time if the image is not present, so the devkit works without Docker Hub too. After changing the source, rebuild with:
 
 ```
 make build-console
 ```
 
-then start it with the build overlay: `docker compose -f docker-compose.yml -f compose.build.yml up -d console`.
+To fetch the published image instead of building: `docker compose pull console`.
 
 To hack on the console with hot reload against a running devkit (needs Node 22):
 
@@ -52,7 +52,7 @@ To hack on the console with hot reload against a running devkit (needs Node 22):
 make dev-console
 ```
 
-The console container needs the Docker socket mounted to restart containers and start the tunnel. Everything else works without it.
+The console listens on port 8082 inside the devkit, so it stays clear of the collector on 8080, Kafka UI on 8081, and whatever you run on 3000. The console container needs the Docker socket mounted to restart containers and start the tunnel. Everything else works without it.
 
 ## Sending events to the collector
 

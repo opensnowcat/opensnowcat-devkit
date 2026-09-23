@@ -1,23 +1,29 @@
-.PHONY: help run-kafka run-warpstream stop logs logs-follow clean console kafka-ui warpstream-console send-good send-bad build-console dev-console
+CONSOLE_URL ?= http://localhost:8082
+
+.PHONY: help run run-kafka run-warpstream stop logs logs-follow clean console open-console wait-console kafka-ui warpstream-console send-good send-bad build-console dev-console
 
 # Default target
 help:
 	@echo "OpenSnowcat Devkit - Available commands:"
 	@echo ""
+	@echo "  make run                - Start environment (Apache Kafka) and open the console"
 	@echo "  make run-kafka          - Start environment with Apache Kafka"
 	@echo "  make run-warpstream     - Start environment with Warpstream"
 	@echo "  make stop               - Stop all containers"
 	@echo "  make logs               - Show logs from all containers"
 	@echo "  make logs-follow        - Follow logs from all containers"
 	@echo "  make clean              - Stop and remove all containers and volumes"
-	@echo "  make console            - Open the OpenSnowcat Console in browser"
-	@echo "  make kafka-ui           - Start (optional) Kafka UI on :8081 and open it"
-	@echo "  make build-console      - Build the console image from ./console"
+	@echo "  make console            - Open the OpenSnowcat Console ($(CONSOLE_URL))"
+	@echo "  make kafka-ui           - Start the optional Kafka UI on :8081 and open it"
+	@echo "  make build-console      - Rebuild the console image from ./console"
 	@echo "  make dev-console        - Run the console with hot reload on the host (needs Node 22)"
 	@echo "  make warpstream-console - Get Warpstream console URL"
 	@echo "  make send-good          - Send 10 good events to collector"
 	@echo "  make send-bad           - Send 10 bad events to collector"
 	@echo ""
+
+# Default environment: Apache Kafka
+run: run-kafka
 
 # Start with Apache Kafka
 run-kafka:
@@ -26,10 +32,11 @@ run-kafka:
 	docker compose up -d
 	@echo ""
 	@echo "✅ Environment started!"
-	@echo "🖥️  Console:   http://localhost:3000"
+	@echo "🖥️  Console:   $(CONSOLE_URL)"
 	@echo "📡 Collector: http://localhost:8080"
 	@echo "📊 Kafka UI:  optional, run 'make kafka-ui'"
-	@open http://localhost:3000 2>/dev/null || xdg-open http://localhost:3000 2>/dev/null || true
+	@$(MAKE) --no-print-directory wait-console
+	@$(MAKE) --no-print-directory open-console
 
 # Start with Warpstream
 run-warpstream:
@@ -40,20 +47,34 @@ run-warpstream:
 	@sleep 10
 	@echo ""
 	@echo "✅ Environment started!"
-	@echo "🖥️  Console:   http://localhost:3000"
+	@echo "🖥️  Console:   $(CONSOLE_URL)"
 	@echo "📡 Collector: http://localhost:8080"
 	@echo "📊 Kafka UI:  optional, run 'make kafka-ui'"
 	@echo ""
-	@echo "🌐 Opening Warpstream Console and OpenSnowcat Console..."
-	@CONSOLE_URL=$$(docker logs warp 2>&1 | grep "console.warpstream.com" | grep -o 'https:/[^[:space:]]*' | sed 's|https:/console|https://console|' | head -1); \
-	if [ -n "$$CONSOLE_URL" ]; then \
-		echo "Warpstream Console: $$CONSOLE_URL"; \
-		open "$$CONSOLE_URL" 2>/dev/null || xdg-open "$$CONSOLE_URL" 2>/dev/null || echo "$$CONSOLE_URL"; \
+	@CONSOLE_URL_WS=$$(docker logs warp 2>&1 | grep "console.warpstream.com" | grep -o 'https:/[^[:space:]]*' | sed 's|https:/console|https://console|' | head -1); \
+	if [ -n "$$CONSOLE_URL_WS" ]; then \
+		echo "🌐 Warpstream Console: $$CONSOLE_URL_WS"; \
+		open "$$CONSOLE_URL_WS" 2>/dev/null || xdg-open "$$CONSOLE_URL_WS" 2>/dev/null || echo "$$CONSOLE_URL_WS"; \
 	else \
-		echo "Console URL not found yet, run: make warpstream-console"; \
+		echo "Warpstream console URL not found yet, run: make warpstream-console"; \
 	fi
-	@sleep 2
-	@open http://localhost:3000 2>/dev/null || xdg-open http://localhost:3000 2>/dev/null || true
+	@$(MAKE) --no-print-directory wait-console
+	@$(MAKE) --no-print-directory open-console
+
+# Poll the console health endpoint so the browser does not open on a blank page
+wait-console:
+	@printf "⏳ Waiting for the console"; \
+	for i in $$(seq 1 90); do \
+		if curl -fsS -o /dev/null $(CONSOLE_URL)/health 2>/dev/null; then echo " ready"; exit 0; fi; \
+		printf "."; sleep 1; \
+	done; \
+	echo " not ready yet, open $(CONSOLE_URL) in a moment"
+
+# Open the console in the default browser
+open-console:
+	@open $(CONSOLE_URL) 2>/dev/null || xdg-open $(CONSOLE_URL) 2>/dev/null || echo "Open $(CONSOLE_URL) in your browser"
+
+console: open-console
 
 # Stop all containers
 stop:
@@ -77,18 +98,14 @@ clean:
 	@docker compose -f docker-warpstream.yml down -v 2>/dev/null || true
 	@echo "✅ Environment cleaned"
 
-# Open the OpenSnowcat Console
-console:
-	@open http://localhost:3000 2>/dev/null || xdg-open http://localhost:3000 2>/dev/null || echo "Open http://localhost:3000 in your browser"
-
 # Start the optional Kafka UI (topic-level tooling) and open it
 kafka-ui:
 	@docker compose --profile kafka-ui up -d kafka-ui 2>/dev/null || docker compose -f docker-warpstream.yml --profile kafka-ui up -d kafka-ui
 	@open http://localhost:8081 2>/dev/null || xdg-open http://localhost:8081 2>/dev/null || echo "Open http://localhost:8081 in your browser"
 
-# Build the console image from source (contributors)
+# Rebuild the console image from source
 build-console:
-	docker compose -f docker-compose.yml -f compose.build.yml build console
+	docker compose build console
 
 # Run the console on the host with hot reload, against the running devkit (needs Node 22)
 dev-console:
