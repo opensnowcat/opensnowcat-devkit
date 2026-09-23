@@ -37,6 +37,16 @@
             "uri": "http://mirror01.iglucentral.com"
           }
         }
+      },
+      {
+        "name": "Snowcatcloud",
+        "priority": 0,
+        "vendorPrefixes": [],
+        "connection": {
+          "http": {
+            "uri": "http://console:3000/iglu/snowcatcloud"
+          }
+        }
       }
     ]
   }
