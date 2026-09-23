@@ -25,9 +25,9 @@ const form = reactive({
   data: '{\n  "sku": "SKU-123",\n  "name": "OpenSnowcat hoodie",\n  "price": 49.9,\n  "currency": "EUR"\n}'
 })
 
-interface SchemaListing { vendors: Array<{ vendor: string, names: Array<{ name: string, versions: Array<{ uri: string }> }> }> }
+interface SchemaListing { folders: Array<{ listing: { vendors: Array<{ vendor: string, names: Array<{ name: string, versions: Array<{ uri: string }> }> }> } }> }
 const { data: schemaList } = await useFetch<SchemaListing>('/api/schemas', { lazy: true, server: false })
-const schemaOptions = computed(() => (schemaList.value?.vendors ?? []).flatMap(v => v.names.flatMap(n => n.versions.map(x => x.uri))))
+const schemaOptions = computed(() => [...new Set((schemaList.value?.folders ?? []).flatMap(f => f.listing.vendors.flatMap(v => v.names.flatMap(n => n.versions.map(x => x.uri)))))])
 watch(() => props.defaultTarget, (t) => { if (t) form.target = t })
 watch(schemaOptions, (opts) => { if (!form.schema && opts.length) form.schema = opts[0]! }, { immediate: true })
 

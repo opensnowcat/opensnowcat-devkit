@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { consoleConfig } from './config'
 import { parseIgluUri } from './enriched'
 import { readSchema, validateRef } from './schemas'
+import { folderIdFromUrl, folderRoot } from './folders'
 
 export interface RegistryConnection {
   http?: { uri: string, apikey?: string }
@@ -113,7 +114,6 @@ export interface ResolveResult {
 export async function resolveTest(schemaUri: string): Promise<ResolveResult> {
   const key = parseIgluUri(schemaUri)
   if (!key) throw createError({ statusCode: 400, statusMessage: 'Expected an Iglu URI like iglu:com.acme/my_event/jsonschema/1-0-0' })
-  const cfg = consoleConfig()
   const { doc } = await readResolver()
   const ordered = orderRegistries(doc.data.repositories, key.vendor)
   const attempts: ResolveAttempt[] = []
@@ -131,11 +131,11 @@ export async function resolveTest(schemaUri: string): Promise<ResolveResult> {
       continue
     }
     const base = reg.connection.http!.uri
-    const isSelf = base === cfg.consoleRegistryUrl
+    const folderId = folderIdFromUrl(base)
     const started = Date.now()
-    if (isSelf) {
+    if (folderId) {
       try {
-        const file = await readSchema(validateRef(key))
+        const file = await readSchema(await folderRoot(folderId), validateRef(key))
         schema = JSON.parse(file.content)
         found = true
         resolvedBy = reg.name

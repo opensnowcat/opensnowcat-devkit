@@ -10,7 +10,7 @@
   "type": "object",
   "properties": {
     "experiment_id": {
-      "type": "string",
+      "type": "number",
       "description": "Experiment identifier",
       "maxLength": 64
     },

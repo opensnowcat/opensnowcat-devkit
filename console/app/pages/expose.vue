@@ -89,7 +89,7 @@ const sendOpen = ref(false)
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-6 max-w-5xl">
+      <div class="flex flex-col gap-6">
         <p class="text-sm text-muted">
           Browsers only send cookies and beacons to HTTPS endpoints, and phones cannot reach your laptop. A Cloudflare quick tunnel gives the local collector a public HTTPS URL in seconds, no account needed.
         </p>

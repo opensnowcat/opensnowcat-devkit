@@ -102,7 +102,7 @@ const groupColumns: TableColumn<GroupInfo>[] = [
     </template>
 
     <template #body>
-      <div class="flex flex-col gap-6 max-w-6xl">
+      <div class="flex flex-col gap-6">
         <UAlert
           v-if="containers && !containers.available"
           color="warning"
@@ -112,7 +112,7 @@ const groupColumns: TableColumn<GroupInfo>[] = [
           :description="containers.error ?? 'Mount the Docker socket to enable restarts and logs.'"
         />
 
-        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
           <UCard
             v-for="c in containers?.containers ?? []"
             :key="c.role"

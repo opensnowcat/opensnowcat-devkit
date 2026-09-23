@@ -11,9 +11,9 @@ defineProps<{ lint: { valid: boolean, errors: Array<{ message: string, path?: st
       v-if="!lint.errors.length && !lint.warnings.length"
       color="success"
       variant="subtle"
-      icon="i-lucide-circle-check"
-      title="Schema looks good"
-      description="Valid self-describing JSON Schema. Enrich resolves it live on the next event."
+      icon="i-lucide-badge-check"
+      title="Schema is valid"
+      description="Self block matches the path, keywords match their types, and it compiles as draft-04 JSON Schema."
     />
     <UAlert
       v-for="(e, i) in lint.errors"
@@ -21,7 +21,8 @@ defineProps<{ lint: { valid: boolean, errors: Array<{ message: string, path?: st
       color="error"
       variant="subtle"
       icon="i-lucide-circle-x"
-      :title="e.path ? `${e.path}: ${e.message}` : e.message"
+      :title="e.message"
+      :description="e.path ? `at ${e.path}` : undefined"
     />
     <UAlert
       v-for="(w, i) in lint.warnings"
@@ -29,7 +30,8 @@ defineProps<{ lint: { valid: boolean, errors: Array<{ message: string, path?: st
       color="warning"
       variant="subtle"
       icon="i-lucide-triangle-alert"
-      :title="w.path ? `${w.path}: ${w.message}` : w.message"
+      :title="w.message"
+      :description="w.path ? `at ${w.path}` : undefined"
     />
   </div>
 </template>

@@ -1,4 +1,3 @@
-import { schemasRoot } from '../utils/schemas'
 import { resolverPath } from '../utils/resolver'
 
 export default defineEventHandler(() => {

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { TreeItem } from '@nuxt/ui'
-import type { ConsoleInfo } from '~/types/api'
 
 useHead({ title: 'Schemas · OpenSnowcat Console' })
 
@@ -8,45 +7,48 @@ interface Ref { vendor: string, name: string, format: string, version: string }
 interface Lint { valid: boolean, errors: Array<{ message: string, path?: string }>, warnings: Array<{ message: string, path?: string }> }
 interface VersionEntry { version: string, format: string, size: number, mtimeMs: number, uri: string }
 interface Listing { root: string, count: number, vendors: Array<{ vendor: string, names: Array<{ name: string, versions: VersionEntry[] }> }> }
+interface Folder { id: string, name: string, path: string, root: string, url: string, primary: boolean, exists: boolean, listing: Listing }
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const hydrated = useHydrated()
 
-const { data: listing, refresh: refreshListing, pending: listingPending } = await useFetch<Listing>('/api/schemas', { server: false, lazy: true })
-const { data: info } = await useFetch<ConsoleInfo>('/api/info', { server: false, lazy: true })
+const { data: folders, refresh: refreshListing, pending: listingPending } = await useFetch<{ folders: Folder[], count: number }>('/api/schemas', { server: false, lazy: true })
 
-const current = ref<Ref | null>(null)
+const current = ref<(Ref & { folder: string }) | null>(null)
 const content = ref('')
 const original = ref('')
 const mtime = ref<number | null>(null)
 const lint = ref<Lint | null>(null)
+const servedAt = ref<string | null>(null)
 const loading = ref(false)
 const saving = ref(false)
+const validating = ref(false)
 const missingUri = ref<string | null>(null)
 
 const dirty = computed(() => content.value !== original.value)
 const uri = computed(() => current.value ? `iglu:${current.value.vendor}/${current.value.name}/${current.value.format}/${current.value.version}` : null)
-const servedUrl = computed(() => current.value && info.value ? `${info.value.consoleRegistryUrl}/schemas/${current.value.vendor}/${current.value.name}/${current.value.format}/${current.value.version}` : null)
+const currentFolder = computed(() => folders.value?.folders.find(f => f.id === current.value?.folder) ?? null)
 
 function parseUri(u: string): Ref | null {
   const m = /^iglu:([^/]+)\/([^/]+)\/([^/]+)\/(\d+-\d+-\d+)$/.exec(u.trim())
   return m ? { vendor: m[1]!, name: m[2]!, format: m[3]!, version: m[4]! } : null
 }
 
-async function open(ref: Ref) {
+async function open(ref: Ref & { folder: string }) {
   if (dirty.value && !confirm('Discard unsaved changes?')) return
   loading.value = true
   missingUri.value = null
   try {
-    const file = await $fetch<{ content: string, mtimeMs: number, lint: Lint }>('/api/schemas/file', { query: ref })
+    const file = await $fetch<{ content: string, mtimeMs: number, lint: Lint, servedAt: string }>('/api/schemas/file', { query: ref })
     current.value = ref
     content.value = file.content
     original.value = file.content
     mtime.value = file.mtimeMs
     lint.value = file.lint
-    router.replace({ query: { uri: `iglu:${ref.vendor}/${ref.name}/${ref.format}/${ref.version}` } })
+    servedAt.value = file.servedAt
+    router.replace({ query: { uri: `iglu:${ref.vendor}/${ref.name}/${ref.format}/${ref.version}`, folder: ref.folder } })
   } catch (e) {
     const status = (e as { statusCode?: number }).statusCode
     if (status === 404) {
@@ -60,15 +62,41 @@ async function open(ref: Ref) {
   }
 }
 
+/** Open a schema by Iglu URI, looking through every folder registry. */
+function openByUri(u: string, preferredFolder?: string) {
+  const ref = parseUri(u)
+  if (!ref) return
+  const list = folders.value?.folders ?? []
+  const has = (f: Folder) => f.listing.vendors.some(v => v.vendor === ref.vendor && v.names.some(n => n.name === ref.name && n.versions.some(x => x.version === ref.version && x.format === ref.format)))
+  const folder = (preferredFolder ? list.find(f => f.id === preferredFolder && has(f)) : undefined) ?? list.find(has) ?? list.find(f => f.id === (preferredFolder ?? 'local')) ?? list[0]
+  open({ ...ref, folder: folder?.id ?? 'local' })
+}
+
 let lintTimer: ReturnType<typeof setTimeout> | null = null
 watch(content, () => {
   if (!current.value) return
   if (lintTimer) clearTimeout(lintTimer)
-  lintTimer = setTimeout(async () => {
-    if (!current.value) return
-    lint.value = await $fetch<Lint>('/api/schemas/lint', { method: 'POST', body: { ...current.value, content: content.value } })
-  }, 350)
+  lintTimer = setTimeout(() => runLint(false), 350)
 })
+
+async function runLint(announce: boolean) {
+  if (!current.value) return
+  validating.value = announce
+  try {
+    const res = await $fetch<Lint>('/api/schemas/lint', { method: 'POST', body: { ...current.value, content: content.value } })
+    lint.value = res
+    if (announce) {
+      toast.add({
+        title: res.valid ? (res.warnings.length ? `Valid, ${res.warnings.length} warning${res.warnings.length === 1 ? '' : 's'}` : 'Schema is valid') : `${res.errors.length} error${res.errors.length === 1 ? '' : 's'}`,
+        description: res.valid ? 'Self-describing block matches the path and the JSON Schema compiles.' : res.errors[0]?.message,
+        color: res.valid ? 'success' : 'error',
+        icon: res.valid ? 'i-lucide-badge-check' : 'i-lucide-circle-x'
+      })
+    }
+  } finally {
+    validating.value = false
+  }
+}
 
 async function save() {
   if (!current.value || !dirty.value) return
@@ -88,37 +116,44 @@ async function save() {
   }
 }
 
-// ---- tree
-const tree = computed<TreeItem[]>(() => (listing.value?.vendors ?? []).map(v => ({
-  label: v.vendor,
-  icon: 'i-lucide-folder',
+// ---- tree: folder registries → vendors → names → versions
+const tree = computed<TreeItem[]>(() => (folders.value?.folders ?? []).map(f => ({
+  label: f.name,
+  icon: f.primary ? 'i-lucide-folder-open' : 'i-lucide-folder',
+  trailingIcon: f.exists ? undefined : 'i-lucide-triangle-alert',
   defaultExpanded: true,
-  children: v.names.map(n => ({
-    label: n.name,
-    icon: 'i-lucide-file-json',
+  children: f.listing.vendors.map(v => ({
+    label: v.vendor,
+    icon: 'i-lucide-building-2',
     defaultExpanded: true,
-    children: n.versions.map(x => ({
-      label: x.version,
-      icon: 'i-lucide-tag',
-      value: x.uri,
-      onSelect: () => open({ vendor: v.vendor, name: n.name, format: x.format, version: x.version })
+    children: v.names.map(n => ({
+      label: n.name,
+      icon: 'i-lucide-file-json',
+      defaultExpanded: true,
+      children: n.versions.map(x => ({
+        label: x.version,
+        icon: 'i-lucide-tag',
+        value: `${f.id}|${x.uri}`,
+        onSelect: () => open({ folder: f.id, vendor: v.vendor, name: n.name, format: x.format, version: x.version })
+      }))
     }))
   }))
 })))
+const folderOptions = computed(() => (folders.value?.folders ?? []).map(f => ({ label: `${f.name} (${f.path})`, value: f.id })))
 
 // ---- create / bump / delete
 const createOpen = ref(false)
-const createForm = reactive({ vendor: 'com.example', name: '', version: '1-0-0', description: '' })
-async function create(from?: Ref) {
+const createForm = reactive({ folder: 'local', vendor: 'com.example', name: '', version: '1-0-0', description: '' })
+async function create(from?: Ref & { folder: string }) {
   try {
     const body = from
-      ? { vendor: from.vendor, name: from.name, format: from.format, version: bumpForm.version, from }
+      ? { folder: from.folder, vendor: from.vendor, name: from.name, format: from.format, version: bumpForm.version, from }
       : { ...createForm }
-    const res = await $fetch<{ ref: Ref }>('/api/schemas/create', { method: 'POST', body })
+    const res = await $fetch<{ ref: Ref, folder: string }>('/api/schemas/create', { method: 'POST', body })
     createOpen.value = false
     bumpOpen.value = false
     await refreshListing()
-    await open(res.ref)
+    await open({ ...res.ref, folder: res.folder })
     toast.add({ title: from ? `Created ${bumpForm.version}` : 'Schema created', description: 'It is served to enrich immediately.', color: 'success', icon: 'i-lucide-plus' })
   } catch (e) {
     const msg = (e as { data?: { statusMessage?: string } }).data?.statusMessage ?? (e as Error).message
@@ -156,7 +191,7 @@ async function remove() {
   }
 }
 
-// ---- validate sample data
+// ---- validate sample data against the editor content
 const sampleOpen = ref(false)
 const sample = ref('{\n  \n}')
 const sampleResult = ref<{ valid: boolean, errors: string[] } | null>(null)
@@ -169,7 +204,7 @@ async function validateSample() {
     sampleResult.value = { valid: false, errors: [`Sample is not valid JSON: ${(e as Error).message}`] }
     return
   }
-  sampleResult.value = await $fetch('/api/schemas/validate', { method: 'POST', body: { ...current.value, data } })
+  sampleResult.value = await $fetch('/api/schemas/validate', { method: 'POST', body: { ...current.value, content: content.value, data } })
 }
 
 async function copyUri() {
@@ -187,10 +222,15 @@ function createMissing() {
   createOpen.value = true
 }
 
-onMounted(() => {
-  const q = typeof route.query.uri === 'string' ? parseUri(route.query.uri) : null
-  if (q) open(q)
-})
+const pendingUri = ref<string | null>(typeof route.query.uri === 'string' ? route.query.uri : null)
+const pendingFolder = typeof route.query.folder === 'string' ? route.query.folder : undefined
+watch(folders, (f) => {
+  if (f && pendingUri.value) {
+    const u = pendingUri.value
+    pendingUri.value = null
+    openByUri(u, pendingFolder)
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -204,7 +244,7 @@ onMounted(() => {
           <UDashboardSidebarCollapse />
         </template>
         <template #right>
-          <UTooltip :text="listing ? `${listing.count} schemas in ${listing.root}` : 'Refresh'">
+          <UTooltip :text="folders ? `${folders.count} schemas across ${folders.folders.length} folder${folders.folders.length === 1 ? '' : 's'}` : 'Refresh'">
             <UButton
               icon="i-lucide-refresh-cw"
               color="neutral"
@@ -223,12 +263,8 @@ onMounted(() => {
     </template>
 
     <template #body>
-      <div class="grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)] h-full">
+      <div class="grid gap-6 lg:grid-cols-[20rem_minmax(0,1fr)] 2xl:grid-cols-[24rem_minmax(0,1fr)] h-full">
         <aside class="min-w-0 flex flex-col gap-3">
-          <p class="text-xs text-muted">
-            Linked directory
-          </p>
-          <code class="text-[11px] font-mono text-highlighted break-all rounded bg-elevated/60 px-2 py-1.5">{{ listing?.root ?? '…' }}</code>
           <UTree
             v-if="tree.length"
             :items="tree"
@@ -251,6 +287,27 @@ onMounted(() => {
               />
             </template>
           </UEmpty>
+          <div
+            v-if="folders"
+            class="mt-auto flex flex-col gap-1 text-[11px] text-muted"
+          >
+            <p
+              v-for="f in folders.folders"
+              :key="f.id"
+              class="font-mono break-all"
+            >
+              <UIcon
+                :name="f.exists ? 'i-lucide-folder-open' : 'i-lucide-triangle-alert'"
+                class="inline-block align-[-2px] mr-1"
+              />{{ f.name }}: {{ f.path }}
+            </p>
+            <NuxtLink
+              to="/registries"
+              class="text-primary hover:underline"
+            >
+              Manage folders on Schema registries
+            </NuxtLink>
+          </div>
         </aside>
 
         <section class="min-w-0 flex flex-col gap-3 min-h-[60vh]">
@@ -259,8 +316,8 @@ onMounted(() => {
             color="warning"
             variant="subtle"
             icon="i-lucide-file-question"
-            :title="`${missingUri} is not in the linked directory`"
-            description="Events referencing it will fail with a resolution error unless another registry serves it."
+            :title="`${missingUri} is not in any folder registry`"
+            description="Events referencing it fail with a resolution error unless another registry serves it."
             :actions="[{ label: 'Create it here', icon: 'i-lucide-plus', onClick: createMissing }]"
           />
           <template v-if="current">
@@ -280,19 +337,28 @@ onMounted(() => {
                 label="Unsaved"
               />
               <UBadge
-                v-else-if="lint?.valid"
-                color="success"
+                v-else-if="lint"
+                :color="lint.valid ? 'success' : 'error'"
                 variant="subtle"
-                label="Live"
-                icon="i-lucide-radio"
+                :label="lint.valid ? 'Valid · live' : `${lint.errors.length} error${lint.errors.length === 1 ? '' : 's'}`"
+                :icon="lint.valid ? 'i-lucide-radio' : 'i-lucide-circle-x'"
               />
-              <div class="ml-auto flex items-center gap-1.5">
+              <div class="ml-auto flex flex-wrap items-center gap-1.5">
+                <UButton
+                  icon="i-lucide-badge-check"
+                  color="neutral"
+                  variant="subtle"
+                  size="sm"
+                  label="Validate"
+                  :loading="validating"
+                  @click="runLint(true)"
+                />
                 <UButton
                   icon="i-lucide-flask-conical"
                   color="neutral"
                   variant="subtle"
                   size="sm"
-                  label="Test data"
+                  label="Test with data"
                   @click="sampleOpen = true"
                 />
                 <UButton
@@ -308,6 +374,7 @@ onMounted(() => {
                   color="error"
                   variant="subtle"
                   size="sm"
+                  aria-label="Delete schema"
                   @click="deleteOpen = true"
                 />
                 <UButton
@@ -320,11 +387,8 @@ onMounted(() => {
                 />
               </div>
             </div>
-            <p
-              v-if="servedUrl"
-              class="text-[11px] text-muted font-mono break-all"
-            >
-              Served to enrich at {{ servedUrl }}
+            <p class="text-[11px] text-muted font-mono break-all">
+              {{ currentFolder?.name ?? current.folder }} · served to enrich at {{ servedAt }}
             </p>
             <div class="flex-1 min-h-[360px]">
               <ClientOnly>
@@ -343,7 +407,7 @@ onMounted(() => {
             v-else-if="!missingUri"
             icon="i-lucide-mouse-pointer-click"
             title="Pick a schema"
-            description="Edits are written straight to the linked directory and served to enrich immediately. No restart, no cache."
+            description="Edits are written straight to the folder and served to enrich immediately. Validation runs as you type and on save."
             class="flex-1"
           />
         </section>
@@ -354,10 +418,20 @@ onMounted(() => {
   <UModal
     v-model:open="createOpen"
     title="New schema"
-    description="Creates vendor/name/jsonschema/version in the linked directory from a starter template."
+    description="Creates vendor/name/jsonschema/version from a starter template."
   >
     <template #body>
       <div class="flex flex-col gap-3">
+        <UFormField
+          v-if="folderOptions.length > 1"
+          label="Folder"
+        >
+          <USelect
+            v-model="createForm.folder"
+            :items="folderOptions"
+            class="w-full"
+          />
+        </UFormField>
         <UFormField
           label="Vendor"
           help="Reverse domain, e.g. com.acme"
@@ -474,7 +548,7 @@ onMounted(() => {
   >
     <template #body>
       <p class="text-sm text-muted">
-        The file is removed from the linked directory. Events referencing it will fail to resolve from then on.
+        The file is removed from the folder. Events referencing it will fail to resolve from then on.
       </p>
     </template>
     <template #footer>
@@ -502,6 +576,9 @@ onMounted(() => {
   >
     <template #body>
       <div class="flex flex-col gap-3">
+        <p class="text-xs text-muted">
+          Uses the editor content, saved or not, so you can try changes before saving.
+        </p>
         <UTextarea
           v-model="sample"
           :rows="12"
