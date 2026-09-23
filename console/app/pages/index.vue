@@ -118,6 +118,16 @@ const counts = computed(() => {
               @click="clear"
             />
           </UTooltip>
+          <UBadge
+            v-if="ready && (stats?.enrich.lag ?? 0) > 0"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-loader-circle"
+            :ui="{ leadingIcon: 'animate-spin' }"
+            class="mr-1"
+          >
+            {{ stats?.enrich.lag }} waiting for enrich
+          </UBadge>
           <UTooltip :text="ready ? 'Send test events to the collector' : `${readiness.label}…`">
             <UButton
               icon="i-lucide-send"
@@ -226,7 +236,7 @@ const counts = computed(() => {
         <UEmpty
           v-else-if="!ready"
           :title="`${readiness.label}…`"
-          description="The pipeline is starting. Kafka, the collector and enrich take a few seconds on a fresh start."
+          :description="readiness.detail && readiness.label !== 'Waiting for Kafka' ? readiness.detail : 'The pipeline is starting. Kafka, the collector and enrich take up to a minute on a fresh start.'"
         >
           <template #leading>
             <div class="flex items-center justify-center size-12 rounded-full bg-elevated">
@@ -245,11 +255,25 @@ const counts = computed(() => {
           </template>
           <template #footer>
             <p
-              v-if="readiness.detail && startedAgo > 45_000"
+              v-if="readiness.label === 'Waiting for Kafka' && readiness.detail && startedAgo > 45_000"
               class="text-xs text-muted font-mono max-w-md"
             >
               {{ readiness.detail }}
             </p>
+          </template>
+        </UEmpty>
+        <UEmpty
+          v-else-if="(stats?.enrich.lag ?? 0) > 0"
+          :title="`Enrich is processing ${stats?.enrich.lag} event${stats?.enrich.lag === 1 ? '' : 's'}…`"
+          description="They show up here as soon as enrich writes them. The first events after a cold start take longest."
+        >
+          <template #leading>
+            <div class="flex items-center justify-center size-12 rounded-full bg-elevated">
+              <UIcon
+                name="i-lucide-loader-circle"
+                class="size-6 animate-spin text-primary"
+              />
+            </div>
           </template>
         </UEmpty>
         <UEmpty

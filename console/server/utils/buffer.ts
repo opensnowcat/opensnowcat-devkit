@@ -37,6 +37,8 @@ export interface StreamStats {
   startedAt: number
   kafka: { connected: boolean, error: string | null, brokers: string[], topics: string[] }
   collector: { ready: boolean, error: string | null, checkedAt: number | null }
+  enrich: { joined: boolean, state: string, members: number, lag: number, error: string | null }
+  pipeline: { verified: boolean, probeSentAt: number | null, verifiedAt: number | null }
   ready: boolean
 }
 
@@ -55,6 +57,8 @@ class EventBuffer extends EventEmitter {
   readonly startedAt = Date.now()
   kafka: StreamStats['kafka'] = { connected: false, error: null, brokers: [], topics: [] }
   collector: StreamStats['collector'] = { ready: false, error: null, checkedAt: null }
+  enrich: StreamStats['enrich'] = { joined: false, state: 'unknown', members: 0, lag: 0, error: null }
+  pipeline: StreamStats['pipeline'] = { verified: false, probeSentAt: null, verifiedAt: null }
 
   push(partial: Omit<StreamEvent, 'seq' | 'id' | 'receivedAt'>) {
     const seq = ++this.seq
@@ -108,7 +112,9 @@ class EventBuffer extends EventEmitter {
       startedAt: this.startedAt,
       kafka: this.kafka,
       collector: this.collector,
-      ready: this.kafka.connected && this.collector.ready
+      enrich: this.enrich,
+      pipeline: this.pipeline,
+      ready: this.kafka.connected && this.collector.ready && this.enrich.joined && this.pipeline.verified
     }
   }
 }

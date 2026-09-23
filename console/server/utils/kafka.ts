@@ -4,6 +4,7 @@ import { eventBuffer } from './buffer'
 import { parseEnrichedTsv } from './enriched'
 import { summarizeBadRow } from './badrows'
 import { consoleConfig } from './config'
+import { sendEvents } from './collector'
 
 type StringConsumer = Consumer<string, string, string, string>
 
@@ -59,6 +60,11 @@ function ingest(msg: Message<string, string, string, string>) {
   if (msg.topic === t.enrichedGood) {
     const parsed = parseEnrichedTsv(value)
     const a = parsed.atomic
+    if (a.app_id === PROBE_APP_ID) {
+      if (!eventBuffer.pipeline.verified) console.info('[console] pipeline verified: probe event came back enriched')
+      eventBuffer.pipeline = { ...eventBuffer.pipeline, verified: true, verifiedAt: Date.now() }
+      return
+    }
     const eventName = a.event_name ?? a.event ?? null
     const schemaKeys = [
       ...(parsed.unstruct ? [parsed.unstruct.schema] : []),
@@ -86,6 +92,10 @@ function ingest(msg: Message<string, string, string, string>) {
   }
 
   const bad = summarizeBadRow(value)
+  if (bad.appId === PROBE_APP_ID) {
+    eventBuffer.pipeline = { ...eventBuffer.pipeline, verified: true, verifiedAt: Date.now() }
+    return
+  }
   eventBuffer.push({
     ...common,
     kind: 'bad',
@@ -167,24 +177,88 @@ export async function startKafka() {
   }
 }
 
-/** Poll the collector's health endpoint so the UI only offers "Send events" when a send can succeed. */
-export function startCollectorProbe(): () => void {
+export const PROBE_APP_ID = 'console-probe'
+
+type LagConsumer = Consumer<string, string, string, string>
+const lagState = (globalThis as unknown as { __osc_lag?: { consumer: LagConsumer | null } }).__osc_lag
+  ?? ((globalThis as unknown as { __osc_lag?: { consumer: LagConsumer | null } }).__osc_lag = { consumer: null })
+
+/** Committed offset of enrich's consumer group vs the end of the raw topic: how many raw payloads still wait for enrich. */
+async function enrichLag(): Promise<number> {
+  const cfg = consoleConfig()
+  const admin = getAdmin()
+  const end = await admin.listOffsets({ topics: [{ name: cfg.topics.collectedGood, partitions: [{ partitionIndex: 0, timestamp: BigInt(-1) }] }] })
+  const endOffset = end[0]?.partitions[0]?.offset ?? BigInt(0)
+  if (!lagState.consumer) {
+    lagState.consumer = new Consumer({ groupId: cfg.enrichGroupId, clientId: 'opensnowcat-console-lag', bootstrapBrokers: cfg.kafkaBrokers, deserializers: stringDeserializers, retries: 1, timeout: 5_000 })
+  }
+  const committed = await lagState.consumer.listCommittedOffsets({ topics: [{ topic: cfg.topics.collectedGood, partitions: [0] }] })
+  const c = committed.get(cfg.topics.collectedGood)?.[0]
+  const committedOffset = c == null || c < BigInt(0) ? BigInt(0) : c
+  const lag = endOffset - committedOffset
+  return lag < BigInt(0) ? 0 : Number(lag)
+}
+
+/**
+ * Pipeline probe: collector health, enrich group membership and lag, and a hidden end-to-end probe event.
+ * "Ready" only once a probe page view sent through the collector comes back enriched.
+ */
+export function startPipelineProbe(): () => void {
   const cfg = consoleConfig()
   let stopped = false
-  const probe = async () => {
-    if (stopped) return
+  let running = false
+  const tick = async () => {
+    if (stopped || running) return
+    running = true
     try {
-      const res = await fetch(`${cfg.collectorUrl}/health`, { signal: AbortSignal.timeout(3_000) })
-      eventBuffer.collector = { ready: res.ok, error: res.ok ? null : `Collector answered HTTP ${res.status}`, checkedAt: Date.now() }
-    } catch (e) {
-      eventBuffer.collector = { ready: false, error: (e as Error).name === 'TimeoutError' ? 'Collector did not answer in 3s' : ((e as Error).message ?? String(e)), checkedAt: Date.now() }
+      try {
+        const res = await fetch(`${cfg.collectorUrl}/health`, { signal: AbortSignal.timeout(3_000) })
+        eventBuffer.collector = { ready: res.ok, error: res.ok ? null : `Collector answered HTTP ${res.status}`, checkedAt: Date.now() }
+      } catch (e) {
+        eventBuffer.collector = { ready: false, error: (e as Error).name === 'TimeoutError' ? 'Collector did not answer in 3s' : ((e as Error).message ?? String(e)), checkedAt: Date.now() }
+      }
+
+      if (eventBuffer.kafka.connected) {
+        try {
+          const groups = await getAdmin().describeGroups({ groups: [cfg.enrichGroupId] })
+          const g = groups.get(cfg.enrichGroupId) as { state?: unknown, members?: Map<string, unknown> } | undefined
+          const members = g?.members instanceof Map ? g.members.size : 0
+          const joined = members > 0
+          if (!joined && eventBuffer.enrich.joined) eventBuffer.pipeline = { verified: false, probeSentAt: null, verifiedAt: null }
+          let lag = eventBuffer.enrich.lag
+          try {
+            lag = await enrichLag()
+          } catch { /* keep the previous value */ }
+          eventBuffer.enrich = { joined, state: String(g?.state ?? 'unknown'), members, lag, error: null }
+        } catch (e) {
+          eventBuffer.enrich = { ...eventBuffer.enrich, joined: false, error: (e as Error).message ?? String(e) }
+        }
+      } else {
+        eventBuffer.enrich = { joined: false, state: 'unknown', members: 0, lag: 0, error: null }
+        eventBuffer.pipeline = { verified: false, probeSentAt: null, verifiedAt: null }
+      }
+
+      const p = eventBuffer.pipeline
+      const canProbe = eventBuffer.kafka.connected && eventBuffer.collector.ready && eventBuffer.enrich.joined && !p.verified
+      if (canProbe && (!p.probeSentAt || Date.now() - p.probeSentAt > 20_000)) {
+        eventBuffer.pipeline = { ...p, probeSentAt: Date.now() }
+        try {
+          await sendEvents({ kind: 'good', count: 1, concurrency: 1, target: 'internal', appId: PROBE_APP_ID })
+        } catch (e) {
+          console.warn('[console] probe event failed', (e as Error).message ?? e)
+        }
+      }
+    } finally {
+      running = false
     }
   }
-  void probe()
-  const timer = setInterval(() => { void probe() }, eventBuffer.collector.ready ? 10_000 : 3_000)
+  void tick()
+  const timer = setInterval(() => { void tick() }, 3_000)
   return () => {
     stopped = true
     clearInterval(timer)
+    void lagState.consumer?.close(true).catch(() => undefined)
+    lagState.consumer = null
   }
 }
 

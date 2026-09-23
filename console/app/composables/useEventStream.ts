@@ -34,6 +34,8 @@ export interface StreamStats {
   startedAt: number
   kafka: { connected: boolean, error: string | null, brokers: string[], topics: string[] }
   collector: { ready: boolean, error: string | null, checkedAt: number | null }
+  enrich: { joined: boolean, state: string, members: number, lag: number, error: string | null }
+  pipeline: { verified: boolean, probeSentAt: number | null, verifiedAt: number | null }
   ready: boolean
 }
 
@@ -55,6 +57,8 @@ export function useEventStream() {
     if (!connected.value) return { label: 'Connecting to the console', detail: null as string | null }
     if (!stats.value?.kafka.connected) return { label: 'Waiting for Kafka', detail: stats.value?.kafka.error ?? null }
     if (!stats.value?.collector.ready) return { label: 'Waiting for the collector', detail: stats.value?.collector.error ?? null }
+    if (!stats.value?.enrich.joined) return { label: 'Waiting for enrich', detail: stats.value?.enrich.error ?? 'Enrich builds its parsers and joins Kafka. Up to a minute on a cold start.' }
+    if (!stats.value?.pipeline.verified) return { label: 'Verifying the pipeline', detail: 'A probe event is on its way through collector, Kafka and enrich.' }
     return { label: 'Ready', detail: null }
   })
 

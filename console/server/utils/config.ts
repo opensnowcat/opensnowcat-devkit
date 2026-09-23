@@ -28,6 +28,7 @@ export interface ConsoleConfig {
   tunnelImage: string
   hostHomeMount: string
   hostHomePath: string
+  enrichGroupId: string
 }
 
 function str(v: unknown, fallback: string): string {
@@ -64,6 +65,7 @@ export function consoleConfig(): ConsoleConfig {
     tunnelTarget: str(c.tunnelTarget, 'http://opensnowcat_collector:8080'),
     tunnelImage: str(c.tunnelImage, 'cloudflare/cloudflared:latest'),
     hostHomeMount: str(c.hostHomeMount, ''),
-    hostHomePath: str(c.hostHomePath, '')
+    hostHomePath: str(c.hostHomePath, ''),
+    enrichGroupId: str(c.enrichGroupId, 'enrich')
   }
 }

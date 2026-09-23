@@ -38,6 +38,7 @@ export default defineNuxtConfig({
     containerBento: 'bento',
     containerKafka: 'warp',
     containerTunnel: 'opensnowcat_tunnel',
+    enrichGroupId: 'enrich',
     tunnelTarget: 'http://opensnowcat_collector:8080',
     tunnelImage: 'cloudflare/cloudflared:latest',
     // Where the host's home directory is mounted (empty = not in a container, browse the real home)
