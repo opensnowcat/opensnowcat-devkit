@@ -1,0 +1,25 @@
+{
+  "$schema": "http://iglucentral.com/schemas/com.snowplowanalytics.self-desc/schema/jsonschema/1-0-0#",
+  "description": "Example context entity: which A/B experiment variant the visitor is in",
+  "self": {
+    "vendor": "com.opensnowcat.example",
+    "name": "web_experiment",
+    "format": "jsonschema",
+    "version": "1-0-0"
+  },
+  "type": "object",
+  "properties": {
+    "experiment_id": {
+      "type": "string",
+      "description": "Experiment identifier",
+      "maxLength": 64
+    },
+    "variant": {
+      "type": "string",
+      "description": "Assigned variant",
+      "maxLength": 64
+    }
+  },
+  "required": ["experiment_id", "variant"],
+  "additionalProperties": false
+}

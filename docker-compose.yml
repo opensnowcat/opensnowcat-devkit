@@ -69,8 +69,33 @@ services:
     environment:
       LOG_LEVEL: "INFO"
 
+  console:
+    container_name: opensnowcat_console
+    networks: [ appnet ]
+    image: opensnowcat/opensnowcat-console:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ${PWD}/opensnowcat:/opensnowcat
+      - ${SCHEMAS_DIR:-./schemas}:/schemas
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      NUXT_KAFKA_BROKERS: warp:9092
+      NUXT_SCHEMAS_DIR: /schemas
+      NUXT_OPENSNOWCAT_DIR: /opensnowcat
+      NUXT_COLLECTOR_URL: http://opensnowcat_collector:8080
+      NUXT_CONSOLE_REGISTRY_URL: http://console:3000/iglu
+      NUXT_TUNNEL_TARGET: http://opensnowcat_collector:8080
+      NUXT_PUBLIC_COLLECTOR_PUBLIC_URL: http://localhost:8080
+      NUXT_PUBLIC_CONSOLE_PUBLIC_URL: http://localhost:3000
+    restart: on-failure
+    depends_on:
+      - warp
+
+  # Optional topic-level tooling. Start with: docker compose --profile kafka-ui up -d kafka-ui  (or make kafka-ui)
   kafka-ui:
     container_name: kafka-ui
+    profiles: [ kafka-ui ]
     networks: [ appnet ]  
     image: provectuslabs/kafka-ui:latest
     ports:

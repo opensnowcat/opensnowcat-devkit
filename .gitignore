@@ -1,3 +1,22 @@
-*.json
+# GCP service-account keys live next to the configs (see opensnowcat/gcp/README.md)
+/opensnowcat/*.json
+!/opensnowcat/resolver.json
+
+# Local env overrides
+.env
+
+# Scratch
 tmp/
 k6/
+
+# Console (Nuxt) build output and dependencies
+console/node_modules/
+console/.nuxt/
+console/.output/
+console/.data/
+console/dist/
+console/.env
+console/*.log
+
+# Claude Code local launch config
+.claude/

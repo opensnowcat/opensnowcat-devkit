@@ -1,0 +1,32 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+@theme static {
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}
+
+:root {
+  --osc-good: var(--color-emerald-500);
+  --osc-bad: var(--color-rose-500);
+}
+
+.osc-row {
+  @apply grid items-center gap-3 px-4 py-2 border-b border-default text-sm cursor-pointer transition-colors;
+  grid-template-columns: 6.5rem 3.5rem 7rem 11rem minmax(0, 1fr) 1.25rem;
+}
+.osc-row:hover { @apply bg-elevated/60; }
+.osc-row.is-good { box-shadow: inset 3px 0 0 var(--osc-good); }
+.osc-row.is-bad { box-shadow: inset 3px 0 0 var(--osc-bad); }
+
+.osc-json {
+  @apply font-mono text-xs leading-relaxed whitespace-pre-wrap break-words rounded-md border border-default bg-elevated/40 p-3 overflow-auto;
+}
+
+.osc-kv { @apply grid gap-x-4 gap-y-1.5 text-sm; grid-template-columns: max-content minmax(0, 1fr); }
+.osc-kv dt { @apply text-muted font-medium whitespace-nowrap; }
+.osc-kv dd { @apply font-mono text-xs break-all text-highlighted; }
+
+.cm-editor { @apply rounded-md border border-default text-sm; height: 100%; }
+.cm-editor.cm-focused { outline: none; border-color: var(--ui-primary); }
+.cm-scroller { font-family: var(--font-mono); }

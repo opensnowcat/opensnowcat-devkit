@@ -1,9 +1,19 @@
 {
   "schema": "iglu:com.snowplowanalytics.iglu/resolver-config/jsonschema/1-0-2",
   "data": {
-    "cacheSize": 500, 
-    "cacheTtl": 3600,
-    "repositories": [ 
+    "cacheSize": 0,
+    "cacheTtl": 60,
+    "repositories": [
+      {
+        "name": "Local schemas (OpenSnowcat Console)",
+        "priority": 0,
+        "vendorPrefixes": [],
+        "connection": {
+          "http": {
+            "uri": "http://console:3000/iglu"
+          }
+        }
+      },
       {
         "name": "Iglu Central",
         "priority": 10,
@@ -19,7 +29,9 @@
       {
         "name": "Iglu Central - GCP Mirror",
         "priority": 20,
-        "vendorPrefixes": [ "com.snowplowanalytics" ],
+        "vendorPrefixes": [
+          "com.snowplowanalytics"
+        ],
         "connection": {
           "http": {
             "uri": "http://mirror01.iglucentral.com"

@@ -1,0 +1,7 @@
+# Overlay for contributors: build the console from ./console instead of pulling the image.
+#   docker compose -f docker-compose.yml -f compose.build.yml up -d --build console
+services:
+  console:
+    build:
+      context: ./console
+    image: opensnowcat/opensnowcat-console:local

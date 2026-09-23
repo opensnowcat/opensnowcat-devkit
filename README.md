@@ -1,31 +1,66 @@
 # OpenSnowcat Devkit
 
-This devkit was forked from Gitlab, the purpose is to provide an easy local development 
-environment for OpenSnowcat. 
+A local development environment for [OpenSnowcat](https://opensnowcat.io): collector, enrich, Kafka (or WarpStream), Bento, and the **OpenSnowcat Console**, a web UI where you watch good and bad events stream live, edit schemas in place, control the pipeline, expose the collector over HTTPS, and send test events.
 
-There are two options to use this devkit: Kafka or Warpstream (Kafka compatible platform). 
+Run everything from the repository root for Windows/Mac/Linux compatibility.
 
-Note if you run warpstream it is limited to 4 hours (warpstream demo) but Kafka is not.
+Run `make help` to see all options.
 
-Run docker from root directory for Windows/Mac/Linux compatibility.
+Add this line to your `/etc/hosts`: `127.0.0.1  warp`
 
-`run make-help` to see all options.
+## Quick start
 
-Add the line to your /etc/hosts: `127.0.0.1  warp`
+```
+make run-kafka
+```
 
-Both when running Kafka and Warpstream Kafka UI is available at http://localhost:8081.
+Then open the console at http://localhost:3000. The collector listens on http://localhost:8080.
 
-## Using Kafka
+Prefer WarpStream (Kafka-compatible, demo limited to 4 hours)? Use `make run-warpstream` and `make warpstream-console` to get its console URL.
 
-Start the environment with: `make run-kafka`
+## OpenSnowcat Console
 
-## Using Warpstream
+The console runs as a container next to the pipeline and talks to Kafka directly.
 
-Start the environment with: `make run-warpstream` and `make warpstream-console` to get the console URL.
+| Page | What you do there |
+|---|---|
+| **Live stream** | One timeline of good and bad events, tailed from Kafka as enrich writes them. Filter by good/bad, app id, event, schema, or bad row type. Click an event for entities, atomic fields, failure details, and the raw payload. Send test events from the toolbar. |
+| **Schemas** | Browse the linked schema directory, edit schemas in place with lint, create new ones, bump versions, test sample data. Saves are live: enrich resolves the new file on the next event. |
+| **Linking** | Manage the Iglu resolver as a form: registries, priorities, vendor prefixes, cache. Saving restarts enrich for you. A resolve tester shows which registry answers for any Iglu URI. |
+| **Expose** | Start a Cloudflare quick tunnel with one click to get an HTTPS URL for the collector, with a QR code for phones, or follow the instructions to run cloudflared yourself. Copy a tracker snippet pointed at the active URL. |
+| **Pipeline** | Container status, restart enrich/collector/Bento, tail logs, topic offsets, and consumer groups. |
+
+### How schemas are served
+
+Your schema directory is mounted into the console, which serves it to enrich as a static Iglu registry at `http://console:3000/iglu`. The devkit ships with the resolver cache at zero, so every edit is picked up immediately, no restart, no cache flush. Registry and enrichment config changes still need an enrich restart, and the console does that when you save on the Linking page.
+
+The default directory is [`schemas/`](schemas/) in this repository, laid out the Iglu way: `<vendor>/<name>/jsonschema/<model>-<revision>-<addition>`. Point it at your own directory by copying `.env.example` to `.env` and setting `SCHEMAS_DIR`.
+
+### Console image
+
+The console is published as `opensnowcat/opensnowcat-console` on Docker Hub, built from [`console/`](console/) by GitHub Actions. To build it locally instead:
+
+```
+make build-console
+```
+
+then start it with the build overlay: `docker compose -f docker-compose.yml -f compose.build.yml up -d console`.
+
+To hack on the console with hot reload against a running devkit (needs Node 22):
+
+```
+make dev-console
+```
+
+The console container needs the Docker socket mounted to restart containers and start the tunnel. Everything else works without it.
 
 ## Sending events to the collector
 
-Run `make send-good` to send 10 events to the collector, or `make send-bad` to send 10 bad events. 
+Use the **Send events** button in the console, or from a terminal: `make send-good` sends 10 events, `make send-bad` sends 10 bad ones.
+
+## Kafka UI
+
+The Provectus Kafka UI is still available for topic-level work, behind an optional profile: `make kafka-ui` starts it on http://localhost:8081.
 
 ## Bento with OpenSnowcat processor
 
@@ -36,4 +71,3 @@ The [Bento opensnowcat processor](https://warpstreamlabs.github.io/bento/docs/co
 ## Using Google Cloud
 
 See README.md under opensnowcat/gcp/.
-
