@@ -63,9 +63,13 @@ services:
     volumes:
       - ${PWD}/opensnowcat:/opensnowcat
       - ${SCHEMAS_DIR:-./schemas}:/schemas
+      # Your home directory, so any schema folder can be picked from the UI. Narrow it with HOST_HOME in .env.
+      - ${HOST_HOME:-${HOME:-${USERPROFILE}}}:/host/home
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       NUXT_KAFKA_BROKERS: warp:9092
+      NUXT_HOST_HOME_MOUNT: /host/home
+      NUXT_HOST_HOME_PATH: ${HOST_HOME:-${HOME:-${USERPROFILE}}}
       NUXT_SCHEMAS_DIR: /schemas
       NUXT_OPENSNOWCAT_DIR: /opensnowcat
       NUXT_COLLECTOR_URL: http://opensnowcat_collector:8080

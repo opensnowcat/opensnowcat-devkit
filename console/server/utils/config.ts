@@ -26,6 +26,8 @@ export interface ConsoleConfig {
   }
   tunnelTarget: string
   tunnelImage: string
+  hostHomeMount: string
+  hostHomePath: string
 }
 
 function str(v: unknown, fallback: string): string {
@@ -60,6 +62,8 @@ export function consoleConfig(): ConsoleConfig {
       tunnel: str(c.containerTunnel, 'opensnowcat_tunnel')
     },
     tunnelTarget: str(c.tunnelTarget, 'http://opensnowcat_collector:8080'),
-    tunnelImage: str(c.tunnelImage, 'cloudflare/cloudflared:latest')
+    tunnelImage: str(c.tunnelImage, 'cloudflare/cloudflared:latest'),
+    hostHomeMount: str(c.hostHomeMount, ''),
+    hostHomePath: str(c.hostHomePath, '')
   }
 }

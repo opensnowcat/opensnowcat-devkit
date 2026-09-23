@@ -3,8 +3,9 @@
  * The primary one ("local") is the mounted schemas directory. Extra folders are stored in
  * <opensnowcatDir>/console.json and served at <consoleRegistryUrl>/f/<id>.
  */
-import { promises as fs, existsSync, statSync } from 'node:fs'
-import { join, isAbsolute, resolve } from 'node:path'
+import { promises as fs, existsSync, statSync, readdirSync } from 'node:fs'
+import { join, isAbsolute, resolve, dirname, sep } from 'node:path'
+import { homedir } from 'node:os'
 import { consoleConfig } from './config'
 import { listSchemas, resolveRoot, schemasRoot } from './schemas'
 
@@ -21,6 +22,88 @@ export interface FolderInfo extends FolderEntry {
   url: string
   primary: boolean
   exists: boolean
+  display: string
+}
+
+/** Where the console is allowed to browse: the host home mount (or the real home when not containerised) and the linked directory. */
+export function browseRoots(): Array<{ label: string, path: string }> {
+  const cfg = consoleConfig()
+  const home = cfg.hostHomeMount || homedir()
+  const roots = [{ label: cfg.hostHomePath ? `Home (${cfg.hostHomePath})` : 'Home', path: resolve(home) }]
+  if (!resolve(cfg.schemasDir).startsWith(roots[0]!.path + sep)) roots.push({ label: 'Linked directory', path: resolve(cfg.schemasDir) })
+  return roots
+}
+
+/** Turn a container path into what the user knows: /host/home/x → /Users/me/x. */
+export function toDisplayPath(path: string): string {
+  const cfg = consoleConfig()
+  if (cfg.hostHomeMount && cfg.hostHomePath) {
+    const mount = resolve(cfg.hostHomeMount)
+    if (path === mount) return cfg.hostHomePath
+    if (path.startsWith(mount + sep)) return cfg.hostHomePath.replace(/[\\/]+$/, '') + path.slice(mount.length)
+  }
+  return path
+}
+
+function withinRoots(path: string): boolean {
+  const p = resolve(path)
+  return browseRoots().some(r => p === r.path || p.startsWith(r.path + sep))
+}
+
+export interface BrowseEntry {
+  name: string
+  path: string
+  display: string
+  looksLikeRegistry: boolean
+}
+
+export interface BrowseResult {
+  path: string
+  display: string
+  parent: string | null
+  roots: Array<{ label: string, path: string }>
+  dirs: BrowseEntry[]
+  schemaCount: number
+  error: string | null
+}
+
+const VENDOR_LIKE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/i
+
+/** True when the folder holds <vendor>/<name>/jsonschema/ somewhere in its first vendor-like entries, or a schemas/ child that does. */
+function looksLikeRegistry(dir: string, depth = 0): boolean {
+  try {
+    if (depth === 0 && existsSync(join(dir, 'schemas')) && statSync(join(dir, 'schemas')).isDirectory() && looksLikeRegistry(join(dir, 'schemas'), 1)) return true
+    const vendors = readdirSync(dir, { withFileTypes: true }).filter(e => e.isDirectory() && VENDOR_LIKE.test(e.name)).slice(0, 25)
+    for (const v of vendors) {
+      const names = readdirSync(join(dir, v.name), { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith('.')).slice(0, 25)
+      if (names.some(n => existsSync(join(dir, v.name, n.name, 'jsonschema')))) return true
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+export async function browseDir(requested?: string): Promise<BrowseResult> {
+  const roots = browseRoots()
+  const path = requested && requested.trim() ? resolve(requested.trim()) : roots[0]!.path
+  const base: BrowseResult = { path, display: toDisplayPath(path), parent: null, roots, dirs: [], schemaCount: 0, error: null }
+  if (!withinRoots(path)) return { ...base, error: 'Outside the folders the console can see. Only your home directory (HOST_HOME) and the linked directory are browsable.' }
+  if (!existsSync(path) || !statSync(path).isDirectory()) return { ...base, error: 'Folder not found.' }
+  const isRoot = roots.some(r => r.path === path)
+  base.parent = isRoot ? null : dirname(path)
+  try {
+    const entries = await fs.readdir(path, { withFileTypes: true })
+    base.dirs = entries
+      .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+      .map(e => ({ name: e.name, path: join(path, e.name), display: toDisplayPath(join(path, e.name)), looksLikeRegistry: looksLikeRegistry(join(path, e.name)) }))
+      .sort((a, b) => Number(b.looksLikeRegistry) - Number(a.looksLikeRegistry) || a.name.localeCompare(b.name))
+      .slice(0, 500)
+    base.schemaCount = (await listSchemas(resolveRoot(path))).count
+  } catch (e) {
+    base.error = `Cannot read folder: ${(e as Error).message}`
+  }
+  return base
 }
 
 function storePath(): string {
@@ -89,15 +172,16 @@ export async function folderRoot(id: string): Promise<string> {
 
 export async function allFolders(): Promise<FolderInfo[]> {
   const cfg = consoleConfig()
-  const out: FolderInfo[] = [{ id: LOCAL_FOLDER_ID, path: cfg.schemasDir, root: schemasRoot(), url: folderRegistryUrl(LOCAL_FOLDER_ID), primary: true, exists: existsSync(schemasRoot()) }]
+  const out: FolderInfo[] = [{ id: LOCAL_FOLDER_ID, path: cfg.schemasDir, root: schemasRoot(), url: folderRegistryUrl(LOCAL_FOLDER_ID), primary: true, exists: existsSync(schemasRoot()), display: cfg.hostHomeMount ? '(linked directory, SCHEMAS_DIR in .env)' : cfg.schemasDir }]
   for (const f of await readFolders()) {
-    out.push({ ...f, root: resolveRoot(f.path), url: folderRegistryUrl(f.id), primary: false, exists: existsSync(f.path) && statSync(f.path).isDirectory() })
+    out.push({ ...f, root: resolveRoot(f.path), url: folderRegistryUrl(f.id), primary: false, exists: existsSync(f.path) && statSync(f.path).isDirectory(), display: toDisplayPath(f.path) })
   }
   return out
 }
 
 export interface FolderCheck {
   path: string
+  display: string
   exists: boolean
   isDirectory: boolean
   root: string
@@ -108,17 +192,18 @@ export interface FolderCheck {
 
 export async function checkFolder(path: string): Promise<FolderCheck> {
   const p = String(path ?? '').trim()
-  if (!p) return { path: p, exists: false, isDirectory: false, root: '', count: 0, sample: [], message: 'Enter a folder path.' }
-  if (!isAbsolute(p)) return { path: p, exists: false, isDirectory: false, root: '', count: 0, sample: [], message: 'Use an absolute path as the console container sees it.' }
+  const fail = (message: string, exists = false, isDirectory = false): FolderCheck => ({ path: p, display: toDisplayPath(p), exists, isDirectory, root: '', count: 0, sample: [], message })
+  if (!p) return fail('Pick a folder with Browse, or type a path.')
+  if (!isAbsolute(p)) return fail('Use an absolute path, or pick the folder with Browse.')
   if (!existsSync(p)) {
-    return { path: p, exists: false, isDirectory: false, root: '', count: 0, sample: [], message: 'Not visible from the console container. Mount it in docker-compose.yml under the console service, or put the schemas under the linked directory.' }
+    return fail('The console cannot see this folder. Pick it with Browse: anything under your home directory is visible. To expose another location set HOST_HOME in .env and run make run again.')
   }
-  if (!statSync(p).isDirectory()) return { path: p, exists: true, isDirectory: false, root: '', count: 0, sample: [], message: 'That path is a file, not a folder.' }
+  if (!statSync(p).isDirectory()) return fail('That path is a file, not a folder.', true, false)
   const root = resolveRoot(p)
   const listing = await listSchemas(root)
   const sample = listing.vendors.flatMap(v => v.names.flatMap(n => n.versions.map(x => x.uri))).slice(0, 5)
   const message = listing.count
     ? `${listing.count} schema${listing.count === 1 ? '' : 's'} found${root !== p ? ' under schemas/' : ''}.`
     : 'Folder exists but holds no schemas in the Iglu layout (vendor/name/jsonschema/1-0-0).'
-  return { path: p, exists: true, isDirectory: true, root, count: listing.count, sample, message }
+  return { path: p, display: toDisplayPath(p), exists: true, isDirectory: true, root, count: listing.count, sample, message }
 }

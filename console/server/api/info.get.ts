@@ -14,6 +14,8 @@ export default defineEventHandler(() => {
     consolePublicUrl: cfg.consolePublicUrl,
     consoleRegistryUrl: cfg.consoleRegistryUrl,
     dockerAvailable: dockerSocketPresent(),
+    hostHomeMount: cfg.hostHomeMount,
+    hostHomePath: cfg.hostHomePath,
     containers: cfg.containers
   }
 })

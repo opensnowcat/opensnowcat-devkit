@@ -7,7 +7,7 @@ interface Ref { vendor: string, name: string, format: string, version: string }
 interface Lint { valid: boolean, errors: Array<{ message: string, path?: string }>, warnings: Array<{ message: string, path?: string }> }
 interface VersionEntry { version: string, format: string, size: number, mtimeMs: number, uri: string }
 interface Listing { root: string, count: number, vendors: Array<{ vendor: string, names: Array<{ name: string, versions: VersionEntry[] }> }> }
-interface Folder { id: string, name: string, path: string, root: string, url: string, primary: boolean, exists: boolean, listing: Listing }
+interface Folder { id: string, name: string, path: string, display: string, root: string, url: string, primary: boolean, exists: boolean, listing: Listing }
 
 const route = useRoute()
 const router = useRouter()
@@ -139,7 +139,7 @@ const tree = computed<TreeItem[]>(() => (folders.value?.folders ?? []).map(f => 
     }))
   }))
 })))
-const folderOptions = computed(() => (folders.value?.folders ?? []).map(f => ({ label: `${f.name} (${f.path})`, value: f.id })))
+const folderOptions = computed(() => (folders.value?.folders ?? []).map(f => ({ label: f.primary ? f.name : `${f.name} (${f.display})`, value: f.id })))
 
 // ---- create / bump / delete
 const createOpen = ref(false)
@@ -299,7 +299,9 @@ watch(folders, (f) => {
               <UIcon
                 :name="f.exists ? 'i-lucide-folder-open' : 'i-lucide-triangle-alert'"
                 class="inline-block align-[-2px] mr-1"
-              />{{ f.name }}: {{ f.path }}
+              />{{ f.name }}<template v-if="!f.primary">
+                : {{ f.display }}
+              </template>
             </p>
             <NuxtLink
               to="/registries"

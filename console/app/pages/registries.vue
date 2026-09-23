@@ -3,11 +3,11 @@ useHead({ title: 'Schema registries · OpenSnowcat Console' })
 
 interface Registry { name: string, priority: number, vendorPrefixes: string[], connection: { http?: { uri: string, apikey?: string }, embedded?: { path: string } } }
 interface ResolverDoc { schema: string, data: { cacheSize: number, cacheTtl?: number, repositories: Registry[] } }
-interface FolderInfo { id: string, path: string, root: string, url: string, primary: boolean, exists: boolean }
+interface FolderInfo { id: string, path: string, root: string, url: string, primary: boolean, exists: boolean, display: string }
 interface Attempt { registry: string, uri: string | null, kind: string, status: 'found' | 'not-found' | 'error' | 'skipped', httpStatus?: number, durationMs?: number, message?: string, matchedPrefix: boolean }
-interface FolderCheck { exists: boolean, isDirectory: boolean, root: string, count: number, sample: string[], message: string }
+interface FolderCheck { exists: boolean, isDirectory: boolean, root: string, count: number, sample: string[], message: string, display: string }
 type Kind = 'folder' | 'http' | 'embedded'
-interface Row { name: string, priority: number, vendorPrefixes: string[], kind: Kind, folderId: string, path: string, uri: string, apikey: string, embeddedPath: string, check?: FolderCheck | null, checking?: boolean }
+interface Row { name: string, priority: number, vendorPrefixes: string[], kind: Kind, folderId: string, path: string, display?: string, uri: string, apikey: string, embeddedPath: string, check?: FolderCheck | null, checking?: boolean }
 
 const toast = useToast()
 const hydrated = useHydrated()
@@ -43,7 +43,7 @@ function load() {
     const fid = r.connection.http ? folderIdFromUrl(r.connection.http.uri) : null
     if (fid) {
       const f = folders.find(x => x.id === fid)
-      return { name: r.name, priority: r.priority, vendorPrefixes: [...r.vendorPrefixes], kind: 'folder', folderId: fid, path: f?.path ?? '', uri: '', apikey: '', embeddedPath: '', check: null }
+      return { name: r.name, priority: r.priority, vendorPrefixes: [...r.vendorPrefixes], kind: 'folder', folderId: fid, path: f?.path ?? '', display: f?.display, uri: '', apikey: '', embeddedPath: '', check: null }
     }
     if (r.connection.http) return { name: r.name, priority: r.priority, vendorPrefixes: [...r.vendorPrefixes], kind: 'http', folderId: '', path: '', uri: r.connection.http.uri, apikey: r.connection.http.apikey ?? '', embeddedPath: '' }
     return { name: r.name, priority: r.priority, vendorPrefixes: [...r.vendorPrefixes], kind: 'embedded', folderId: '', path: '', uri: '', apikey: '', embeddedPath: r.connection.embedded?.path ?? '' }
@@ -85,7 +85,8 @@ function add(preset: 'local' | 'folder' | 'iglu-central' | 'http' | 'embedded') 
       break
     case 'folder': {
       const name = 'Extra schema folder'
-      form.rows.unshift({ ...empty, name, kind: 'folder', folderId: slug(name), path: '/schemas/extra' })
+      form.rows.unshift({ ...empty, name, kind: 'folder', folderId: slug(name), path: '' })
+      browseFor(form.rows[0]!)
       break
     }
     case 'iglu-central':
@@ -103,11 +104,30 @@ function remove(i: number) {
 }
 function onKindChange(r: Row) {
   if (r.kind === 'folder' && !r.folderId) r.folderId = slug(r.name || 'folder')
-  if (r.kind === 'folder' && !r.path) r.path = '/schemas/extra'
+  if (r.kind === 'folder' && !r.path) browseFor(r)
 }
 function onNameChange(r: Row) {
   if (r.kind === 'folder' && r.folderId !== 'local' && !r.path.trim()) r.folderId = slug(r.name)
 }
+const browseOpen = ref(false)
+const browseTarget = ref<Row | null>(null)
+function browseFor(r: Row) {
+  browseTarget.value = r
+  browseOpen.value = true
+}
+function onPicked(path: string, display: string) {
+  const r = browseTarget.value
+  if (!r) return
+  r.path = path
+  r.display = display
+  r.check = null
+  if (!r.name.trim() || r.name === 'Extra schema folder') {
+    r.name = display.split(/[\\/]/).filter(Boolean).pop() ?? 'Schema folder'
+    r.folderId = slug(r.name)
+  }
+  check(r)
+}
+
 async function check(r: Row) {
   r.checking = true
   try {
@@ -319,17 +339,26 @@ const KIND_ICON: Record<Kind, string> = { folder: 'i-lucide-folder-open', http: 
               <div class="flex flex-col gap-3 min-w-0">
                 <template v-if="r.kind === 'folder'">
                   <UFormField
-                    label="Folder path"
+                    label="Folder"
                     size="sm"
-                    :help="r.folderId === 'local' ? 'The mounted schema directory. Change it with SCHEMAS_DIR in .env and run make run again.' : 'As seen from the console container. Mount extra folders under the console service in docker-compose.yml.'"
+                    :help="r.folderId === 'local' ? 'The devkit schema directory (SCHEMAS_DIR in .env).' : 'Any folder under your home directory. Browse to pick it.'"
                   >
                     <div class="flex gap-1.5">
                       <UInput
-                        v-model="r.path"
+                        :model-value="r.folderId === 'local' ? (r.display ?? r.path) : (r.display ?? r.path)"
                         size="sm"
                         class="w-full font-mono"
-                        :disabled="r.folderId === 'local'"
-                        placeholder="/schemas/extra"
+                        readonly
+                        :placeholder="r.folderId === 'local' ? '' : 'Pick a folder…'"
+                      />
+                      <UButton
+                        v-if="r.folderId !== 'local'"
+                        size="sm"
+                        color="neutral"
+                        variant="subtle"
+                        icon="i-lucide-folder-search"
+                        label="Browse"
+                        @click="browseFor(r)"
                       />
                       <UButton
                         size="sm"
@@ -338,6 +367,7 @@ const KIND_ICON: Record<Kind, string> = { folder: 'i-lucide-folder-open', http: 
                         icon="i-lucide-scan-search"
                         label="Check"
                         :loading="r.checking"
+                        :disabled="!r.path"
                         @click="check(r)"
                       />
                     </div>
@@ -598,6 +628,11 @@ const KIND_ICON: Record<Kind, string> = { folder: 'i-lucide-folder-open', http: 
           </UCard>
         </div>
       </div>
+      <FolderBrowser
+        v-model:open="browseOpen"
+        :start="browseTarget?.path"
+        @select="onPicked"
+      />
     </template>
   </UDashboardPanel>
 </template>

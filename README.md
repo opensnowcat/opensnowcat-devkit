@@ -34,7 +34,7 @@ The console runs as a container next to the pipeline and talks to Kafka directly
 
 Your schema directory is mounted into the console, which serves it to enrich as a static Iglu registry at `http://console:3000/iglu`. The devkit ships with the resolver cache at zero, so every edit is picked up immediately, no restart, no cache flush. Registry and enrichment config changes still need an enrich restart, and the console does that when you save on the Linking page.
 
-The default directory is [`schemas/`](schemas/) in this repository, laid out the Iglu way: `<vendor>/<name>/jsonschema/<model>-<revision>-<addition>`. Point it at your own directory by copying `.env.example` to `.env` and setting `SCHEMAS_DIR`. Extra folders can be added as registries on the Schema registries page, as long as the console container can see them (mount them under the console service in the compose file).
+The default directory is [`schemas/`](schemas/) in this repository, laid out the Iglu way: `<vendor>/<name>/jsonschema/<model>-<revision>-<addition>`. Point it at your own directory by copying `.env.example` to `.env` and setting `SCHEMAS_DIR`. Any other folder under your home directory can be added as a registry from the Schema registries page: Add registry, Another folder, Browse, pick it. The console container mounts your home directory for this; set `HOST_HOME` in `.env` to expose a narrower parent instead.
 
 ### Console image
 

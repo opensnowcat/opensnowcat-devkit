@@ -40,6 +40,9 @@ export default defineNuxtConfig({
     containerTunnel: 'opensnowcat_tunnel',
     tunnelTarget: 'http://opensnowcat_collector:8080',
     tunnelImage: 'cloudflare/cloudflared:latest',
+    // Where the host's home directory is mounted (empty = not in a container, browse the real home)
+    hostHomeMount: '',
+    hostHomePath: '',
     public: {
       // Override with NUXT_PUBLIC_<KEY>
       collectorPublicUrl: 'http://localhost:8080',
