@@ -20,7 +20,6 @@ watch(() => [open.value, props.row] as const, ([o, r]) => {
     draft.value = { ...r, vendorPrefixes: [...r.vendorPrefixes], check: r.check ?? null, keyCheck: r.keyCheck ?? null }
     showKey.value = false
     needsKey.value = r.kind === 'http' && !!r.apikey
-    if (draft.value.kind === 'folder' && !draft.value.path && !isLocal.value) browseOpen.value = true
   }
 }, { immediate: true })
 
@@ -42,16 +41,12 @@ function setKind(kind: RegistryKind) {
     d.keySaved = props.context.snowcatConfigured
     if (!d.name.trim() || d.name === 'My Iglu Server') d.name = 'SnowcatCloud Schema Registry'
   }
-  if (kind === 'folder' && !d.folderId) {
-    d.folderId = props.context.slug(d.name || 'folder')
-    if (!d.path) browseOpen.value = true
-  }
+  if (kind === 'folder' && !d.folderId) d.folderId = props.context.slug(d.name || 'folder')
   if (kind === 'http' && !d.uri) d.uri = 'https://'
   if (kind === 'embedded' && !d.embeddedPath) d.embeddedPath = '/iglu-client-embedded'
 }
 
 // ---- folder browsing / checking
-const browseOpen = ref(false)
 function onPicked(path: string, display: string) {
   const d = draft.value
   if (!d) return
@@ -168,22 +163,14 @@ function remove() {
         <template v-if="draft.kind === 'folder'">
           <UFormField
             label="Folder"
-            :help="isLocal ? 'The devkit schema directory. Change it with SCHEMAS_DIR in .env and run make run again.' : 'Any folder under your home directory or the linked directory.'"
+            :help="isLocal ? 'The devkit schema directory. Change it with SCHEMAS_DIR in .env and run make run again.' : 'Pick any folder under your home directory or the linked directory.'"
           >
             <div class="flex gap-1.5">
               <UInput
                 :model-value="isLocal ? 'Linked directory (schemas/)' : (draft.display ?? draft.path)"
                 class="w-full font-mono"
                 readonly
-                placeholder="Pick a folder…"
-              />
-              <UButton
-                v-if="!isLocal"
-                color="neutral"
-                variant="subtle"
-                icon="i-lucide-folder-search"
-                label="Browse"
-                @click="browseOpen = true"
+                placeholder="No folder picked yet"
               />
               <UButton
                 color="neutral"
@@ -196,6 +183,16 @@ function remove() {
               />
             </div>
           </UFormField>
+          <div
+            v-if="!isLocal"
+            class="rounded-lg border border-default p-3"
+          >
+            <FolderBrowser
+              inline
+              :start="draft.path"
+              @select="onPicked"
+            />
+          </div>
           <p class="text-[11px] font-mono text-muted break-all -mt-3">
             Served to enrich at {{ context.folderUrl(draft.folderId || 'local') }}
           </p>
@@ -318,11 +315,6 @@ function remove() {
           />
         </UFormField>
       </div>
-      <FolderBrowser
-        v-model:open="browseOpen"
-        :start="draft?.path"
-        @select="onPicked"
-      />
     </template>
     <template #footer>
       <div class="flex items-center gap-2 w-full">

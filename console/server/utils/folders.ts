@@ -3,7 +3,7 @@
  * The primary one ("local") is the mounted schemas directory. Extra folders are stored in
  * <opensnowcatDir>/console.json and served at <consoleRegistryUrl>/f/<id>.
  */
-import { promises as fs, existsSync, statSync, readdirSync } from 'node:fs'
+import { promises as fs, existsSync, statSync } from 'node:fs'
 import { join, isAbsolute, resolve, dirname, sep } from 'node:path'
 import { homedir } from 'node:os'
 import { consoleConfig } from './config'
@@ -72,19 +72,31 @@ export interface BrowseResult {
 
 const VENDOR_LIKE = /^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/i
 
-/** True when the folder holds <vendor>/<name>/jsonschema/ somewhere in its first vendor-like entries, or a schemas/ child that does. */
-function looksLikeRegistry(dir: string, depth = 0): boolean {
+const SKIP_DIRS = new Set(['Library', 'Applications', 'node_modules', 'Music', 'Movies', 'Pictures', 'Photos Library.photoslibrary'])
+
+async function dirNames(dir: string, limit: number): Promise<string[]> {
   try {
-    if (depth === 0 && existsSync(join(dir, 'schemas')) && statSync(join(dir, 'schemas')).isDirectory() && looksLikeRegistry(join(dir, 'schemas'), 1)) return true
-    const vendors = readdirSync(dir, { withFileTypes: true }).filter(e => e.isDirectory() && VENDOR_LIKE.test(e.name)).slice(0, 25)
-    for (const v of vendors) {
-      const names = readdirSync(join(dir, v.name), { withFileTypes: true }).filter(e => e.isDirectory() && !e.name.startsWith('.')).slice(0, 25)
-      if (names.some(n => existsSync(join(dir, v.name, n.name, 'jsonschema')))) return true
+    const entries = await fs.readdir(dir, { withFileTypes: true })
+    const out: string[] = []
+    for (const e of entries) {
+      if (e.isDirectory() && !e.name.startsWith('.')) out.push(e.name)
+      if (out.length >= limit) break
     }
-    return false
+    return out
   } catch {
-    return false
+    return []
   }
+}
+
+/** True when the folder holds <vendor>/<name>/jsonschema/ within its first vendor-like entries, or a schemas/ child that does. Cheap: at most a few dozen readdirs. */
+async function looksLikeRegistry(dir: string, depth = 0): Promise<boolean> {
+  if (depth === 0 && existsSync(join(dir, 'schemas')) && statSync(join(dir, 'schemas')).isDirectory() && await looksLikeRegistry(join(dir, 'schemas'), 1)) return true
+  const vendors = (await dirNames(dir, 40)).filter(n => VENDOR_LIKE.test(n)).slice(0, 15)
+  const checks = await Promise.all(vendors.map(async (v) => {
+    const names = await dirNames(join(dir, v), 15)
+    return names.some(n => existsSync(join(dir, v, n, 'jsonschema')))
+  }))
+  return checks.some(Boolean)
 }
 
 export async function browseDir(requested?: string): Promise<BrowseResult> {
@@ -96,13 +108,15 @@ export async function browseDir(requested?: string): Promise<BrowseResult> {
   const isRoot = roots.some(r => r.path === path)
   base.parent = isRoot ? null : dirname(path)
   try {
-    const entries = await fs.readdir(path, { withFileTypes: true })
+    const entries = (await fs.readdir(path, { withFileTypes: true }))
+      .filter(e => e.isDirectory() && !e.name.startsWith('.') && !SKIP_DIRS.has(e.name))
+      .slice(0, 300)
+    const flags = await Promise.all(entries.map(e => looksLikeRegistry(join(path, e.name))))
     base.dirs = entries
-      .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
-      .map(e => ({ name: e.name, path: join(path, e.name), display: toDisplayPath(join(path, e.name)), looksLikeRegistry: looksLikeRegistry(join(path, e.name)) }))
+      .map((e, i) => ({ name: e.name, path: join(path, e.name), display: toDisplayPath(join(path, e.name)), looksLikeRegistry: flags[i] ?? false }))
       .sort((a, b) => Number(b.looksLikeRegistry) - Number(a.looksLikeRegistry) || a.name.localeCompare(b.name))
-      .slice(0, 500)
-    base.schemaCount = (await listSchemas(resolveRoot(path))).count
+    // Only walk for a count when this folder already looks like a registry; walking a home directory is slow.
+    base.schemaCount = (await looksLikeRegistry(path)) ? (await listSchemas(resolveRoot(path))).count : 0
   } catch (e) {
     base.error = `Cannot read folder: ${(e as Error).message}`
   }

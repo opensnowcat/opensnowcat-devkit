@@ -23,7 +23,7 @@ const snowcatHost = (() => {
   }
 })()
 
-const { data, refresh, pending } = await useFetch<{ doc: ResolverDoc, path: string, consoleRegistryUrl: string, folders: FolderInfo[], snowcat: SnowcatInfo }>('/api/resolver', { server: false, lazy: true, getCachedData: () => undefined })
+const { data, refresh, pending } = await useFetch<{ doc: ResolverDoc, path: string, consoleRegistryUrl: string, folders: FolderInfo[], snowcat: SnowcatInfo, restartNeeded: boolean | null, enrichStartedAt: number | null }>('/api/resolver', { server: false, lazy: true, getCachedData: () => undefined })
 
 const base = computed(() => data.value?.consoleRegistryUrl ?? 'http://console:3000/iglu')
 const snowcatProxy = computed(() => data.value?.snowcat.proxyUrl ?? '')
@@ -76,6 +76,8 @@ function load() {
     return { ...common, kind: 'embedded', embeddedPath: r.connection.embedded?.path ?? '' }
   })
   original.value = JSON.stringify(payload())
+  restartNeeded.value = data.value.restartNeeded === true
+  if (needsMigration.value) void persist()
 }
 watch(data, load, { immediate: true })
 
@@ -104,7 +106,7 @@ function payload() {
   const snowcatApiKey = snowcatRow ? (snowcatRow.apikey.trim() ? snowcatRow.apikey.trim() : undefined) : (data.value?.snowcat.configured ? '' : undefined)
   return { doc, folders, snowcatApiKey }
 }
-const dirty = computed(() => needsMigration.value || JSON.stringify(payload()) !== original.value)
+const restartNeeded = ref(false)
 const hasLocal = computed(() => form.rows.some(r => r.kind === 'folder' && r.folderId === 'local'))
 const hasSnowcat = computed(() => form.rows.some(r => r.kind === 'snowcatcloud'))
 const localFolder = computed(() => data.value?.folders.find(f => f.primary))
@@ -209,35 +211,79 @@ function statusOf(r: RegistryRow): Status {
   return { label: 'Inside enrich', color: 'neutral', icon: 'i-lucide-package' }
 }
 
-// ---- save
-const saving = ref(false)
-const restartState = ref<'idle' | 'restarting' | 'done' | 'failed'>('idle')
-const restartMessage = ref('')
-async function save(restart = true) {
-  saving.value = true
-  restartState.value = restart ? 'restarting' : 'idle'
+// ---- autosave: every change is written straight to resolver.json, enrich needs a restart to pick it up
+const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const saveError = ref('')
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+let saveQueued = false
+async function persist() {
+  if (!data.value) return
+  if (saveState.value === 'saving') {
+    saveQueued = true
+    return
+  }
+  const body = payload()
+  const serialized = JSON.stringify(body)
+  if (serialized === original.value && !needsMigration.value) return
+  saveState.value = 'saving'
   try {
-    const res = await $fetch<{ restarted: { name: string } | null, restartError: string | null }>('/api/resolver', { method: 'PUT', body: { ...payload(), restart } })
-    await refresh()
-    if (restart) {
-      if (res.restarted) {
-        restartState.value = 'done'
-        restartMessage.value = `${res.restarted.name} restarted. It takes a few seconds to rejoin Kafka.`
-        toast.add({ title: 'Saved and enrich restarted', description: restartMessage.value, color: 'success', icon: 'i-lucide-refresh-cw' })
-      } else {
-        restartState.value = 'failed'
-        restartMessage.value = res.restartError ?? 'Unknown error'
-        toast.add({ title: 'Saved, but enrich did not restart', description: restartMessage.value, color: 'warning', icon: 'i-lucide-triangle-alert' })
+    const res = await $fetch<{ folders: FolderInfo[], snowcat: SnowcatInfo }>('/api/resolver', { method: 'PUT', body: { ...body, restart: false } })
+    // a typed SnowcatCloud key is now stored server-side; keep it out of the form from here on
+    for (const r of form.rows) {
+      if (r.kind === 'snowcatcloud' && r.apikey.trim()) {
+        r.apikey = ''
+        r.keySaved = true
       }
-    } else {
-      toast.add({ title: 'Saved', description: 'Restart enrich from the Pipeline page to apply.', color: 'success', icon: 'i-lucide-save' })
+      r.isNew = false
     }
+    if (data.value) {
+      data.value.folders = res.folders
+      data.value.snowcat = res.snowcat
+      data.value.doc = body.doc
+    }
+    needsMigration.value = false
+    original.value = JSON.stringify(payload())
+    restartNeeded.value = true
+    saveState.value = 'saved'
   } catch (e) {
-    restartState.value = 'failed'
-    const msg = (e as { data?: { statusMessage?: string } }).data?.statusMessage ?? (e as Error).message
-    toast.add({ title: 'Save failed', description: msg, color: 'error', icon: 'i-lucide-x' })
+    saveState.value = 'error'
+    saveError.value = (e as { data?: { statusMessage?: string } }).data?.statusMessage ?? (e as Error).message
+    toast.add({ title: 'Could not save the registry list', description: saveError.value, color: 'error', icon: 'i-lucide-x' })
   } finally {
-    saving.value = false
+    if (saveQueued) {
+      saveQueued = false
+      void persist()
+    }
+  }
+}
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => { void persist() }, 500)
+}
+watch(() => data.value ? JSON.stringify(payload()) : '', (v) => {
+  if (!data.value || !original.value || v === original.value) return
+  scheduleSave()
+})
+
+const restarting = ref(false)
+const restartError = ref('')
+async function restartEnrich() {
+  restarting.value = true
+  restartError.value = ''
+  try {
+    if (saveTimer) {
+      clearTimeout(saveTimer)
+      await persist()
+    }
+    await $fetch('/api/pipeline/restart', { method: 'POST', body: { role: 'enrich' } })
+    restartNeeded.value = false
+    toast.add({ title: 'Enrich is restarting', description: 'It rejoins Kafka in a few seconds and then uses the new registry list.', color: 'success', icon: 'i-lucide-refresh-cw' })
+    setTimeout(() => refresh(), 4000)
+  } catch (e) {
+    restartError.value = (e as { data?: { statusMessage?: string } }).data?.statusMessage ?? (e as Error).message
+    toast.add({ title: 'Enrich did not restart', description: restartError.value, color: 'error', icon: 'i-lucide-triangle-alert' })
+  } finally {
+    restarting.value = false
   }
 }
 
@@ -278,34 +324,41 @@ const kindLabel = (k: RegistryKind) => KIND_LABEL[k]
           <UDashboardSidebarCollapse />
         </template>
         <template #right>
-          <UBadge
-            v-if="dirty"
-            color="warning"
-            variant="subtle"
-            label="Unsaved changes"
-            class="mr-1"
-          />
+          <span
+            class="text-xs mr-2 flex items-center gap-1.5"
+            :class="saveState === 'error' ? 'text-error' : 'text-muted'"
+          >
+            <UIcon
+              v-if="saveState === 'saving'"
+              name="i-lucide-loader-circle"
+              class="animate-spin"
+            />
+            <UIcon
+              v-else-if="saveState === 'saved'"
+              name="i-lucide-check"
+              class="text-success"
+            />
+            <UIcon
+              v-else-if="saveState === 'error'"
+              name="i-lucide-triangle-alert"
+            />
+            {{ saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Save failed' : 'Changes save automatically' }}
+          </span>
           <UButton
             icon="i-lucide-refresh-cw"
             color="neutral"
             variant="ghost"
             :loading="hydrated && pending"
+            aria-label="Reload"
             @click="refresh()"
           />
           <UButton
-            color="neutral"
-            variant="subtle"
-            label="Save only"
-            :disabled="!dirty"
-            :loading="saving"
-            @click="save(false)"
-          />
-          <UButton
-            icon="i-lucide-refresh-cw"
-            label="Save & restart enrich"
-            :disabled="!dirty"
-            :loading="saving"
-            @click="save(true)"
+            icon="i-lucide-rotate-cw"
+            label="Restart enrich"
+            :color="restartNeeded ? 'primary' : 'neutral'"
+            :variant="restartNeeded ? 'solid' : 'subtle'"
+            :loading="restarting"
+            @click="restartEnrich"
           />
         </template>
       </UDashboardNavbar>
@@ -314,27 +367,30 @@ const kindLabel = (k: RegistryKind) => KIND_LABEL[k]
     <template #body>
       <div class="flex flex-col gap-5">
         <UAlert
-          v-if="restartState === 'restarting'"
+          v-if="restartNeeded"
           color="warning"
-          variant="subtle"
-          icon="i-lucide-loader-circle"
-          title="Restarting enrich…"
+          variant="soft"
+          icon="i-lucide-rotate-cw"
+          title="Restart enrich to apply your changes"
+          description="The registry list is saved, but enrich only reads it when it starts. Events keep resolving against the old list until you restart."
+          :actions="[{ label: 'Restart enrich now', icon: 'i-lucide-rotate-cw', color: 'warning', variant: 'solid', loading: restarting, onClick: restartEnrich }]"
+          :ui="{ root: 'ring-2 ring-warning/40', title: 'text-base font-semibold' }"
         />
         <UAlert
-          v-else-if="restartState === 'failed'"
+          v-else-if="restartError"
           color="error"
           variant="subtle"
           icon="i-lucide-triangle-alert"
           title="Enrich restart failed"
-          :description="restartMessage"
+          :description="restartError"
         />
         <UAlert
           v-if="needsMigration"
           color="warning"
           variant="subtle"
           icon="i-lucide-key-round"
-          title="Your SnowcatCloud key is sitting in resolver.json, which is tracked in git"
-          description="Save to move it into the console's local store. Enrich will then reach SnowcatCloud through the console."
+          title="Moving your SnowcatCloud key out of resolver.json"
+          description="It is being saved into the console's local store, which git ignores."
         />
         <UAlert
           v-if="data && !hasLocal"
@@ -357,7 +413,7 @@ const kindLabel = (k: RegistryKind) => KIND_LABEL[k]
                   Registries
                 </h3>
                 <p class="text-xs text-muted">
-                  Drag to set the order enrich tries them in. Click a row to edit. Changing this list restarts enrich on save.
+                  Drag to set the order enrich tries them in. Click a row to edit. Changes save on their own; restart enrich to apply them.
                 </p>
               </div>
               <UDropdownMenu
