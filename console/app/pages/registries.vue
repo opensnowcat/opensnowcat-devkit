@@ -31,6 +31,7 @@ const { data, refresh, pending } = await useFetch<{ doc: ResolverDoc, path: stri
 
 const form = reactive<{ cacheSize: number, cacheTtl: number | null, rows: Row[] }>({ cacheSize: 0, cacheTtl: null, rows: [] })
 const original = ref('')
+const needsMigration = ref(false)
 const base = computed(() => data.value?.consoleRegistryUrl ?? 'http://console:3000/iglu')
 
 function folderIdFromUrl(uri: string): string | null {
@@ -55,6 +56,7 @@ function load() {
   const folders = data.value.folders
   form.cacheSize = data.value.doc.data.cacheSize
   form.cacheTtl = data.value.doc.data.cacheTtl ?? null
+  needsMigration.value = data.value.doc.data.repositories.some(r => !!r.connection.http && snowcatKind(r.connection.http.uri) === 'direct')
   form.rows = data.value.doc.data.repositories.map((r): Row => {
     const fid = r.connection.http ? folderIdFromUrl(r.connection.http.uri) : null
     if (fid) {
@@ -99,7 +101,7 @@ function payload() {
   const snowcatApiKey = snowcatRow ? (snowcatRow.apikey.trim() ? snowcatRow.apikey.trim() : undefined) : (data.value?.snowcat.configured ? '' : undefined)
   return { doc, folders, snowcatApiKey }
 }
-const dirty = computed(() => JSON.stringify(payload()) !== original.value)
+const dirty = computed(() => needsMigration.value || JSON.stringify(payload()) !== original.value)
 const hasLocal = computed(() => form.rows.some(r => r.kind === 'folder' && r.folderId === 'local'))
 const localFolder = computed(() => data.value?.folders.find(f => f.primary))
 
@@ -319,6 +321,14 @@ const KIND_ICON: Record<Kind, string> = { folder: 'i-lucide-folder-open', snowca
           />
         </div>
 
+        <UAlert
+          v-if="needsMigration"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-key-round"
+          title="Your SnowcatCloud key is sitting in resolver.json, which is tracked in git"
+          description="Save to move it into the console's local store. Enrich will then reach SnowcatCloud through the console."
+        />
         <UAlert
           v-if="data && !hasLocal"
           color="warning"
