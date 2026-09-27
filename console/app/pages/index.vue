@@ -239,7 +239,7 @@ const counts = computed(() => {
         <UEmpty
           v-else-if="!ready"
           :title="`${readiness.label}…`"
-          :description="readiness.detail && readiness.label !== 'Waiting for Kafka' ? readiness.detail : 'The pipeline is starting. Kafka, the collector and enrich take up to a minute on a fresh start.'"
+          :description="readiness.detail && !readiness.waitingForSource ? readiness.detail : `The pipeline is starting. ${stats?.source.label ?? 'Kafka'}, the collector and enrich take up to a minute on a fresh start.`"
         >
           <template #leading>
             <div class="flex items-center justify-center size-12 rounded-full bg-elevated">
@@ -258,7 +258,7 @@ const counts = computed(() => {
           </template>
           <template #footer>
             <p
-              v-if="readiness.label === 'Waiting for Kafka' && readiness.detail && startedAgo > 45_000"
+              v-if="readiness.waitingForSource && readiness.detail && startedAgo > 45_000"
               class="text-xs text-muted font-mono max-w-md"
             >
               {{ readiness.detail }}

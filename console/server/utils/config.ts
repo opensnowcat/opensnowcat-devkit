@@ -1,7 +1,12 @@
 import { resolve } from 'node:path'
 
+export type StreamSourceType = 'kafka' | 'kinesis'
+
 export interface ConsoleConfig {
+  /** Where the console tails events from; the topic names double as Kinesis stream names */
+  streamSource: StreamSourceType
   kafkaBrokers: string[]
+  kinesisRegion: string
   topics: {
     collectedGood: string
     collectedBad: string
@@ -39,7 +44,9 @@ function str(v: unknown, fallback: string): string {
 export function consoleConfig(): ConsoleConfig {
   const c = useRuntimeConfig() as Record<string, unknown> & { public: Record<string, unknown> }
   return {
+    streamSource: str(c.streamSource, 'kafka') === 'kinesis' ? 'kinesis' : 'kafka',
     kafkaBrokers: str(c.kafkaBrokers, 'localhost:9092').split(',').map(s => s.trim()).filter(Boolean),
+    kinesisRegion: str(c.kinesisRegion, process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? 'us-east-1'),
     topics: {
       collectedGood: str(c.topicCollectedGood, 'collected-good'),
       collectedBad: str(c.topicCollectedBad, 'collected-bad'),

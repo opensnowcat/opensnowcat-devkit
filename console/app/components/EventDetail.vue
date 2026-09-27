@@ -2,6 +2,7 @@
 import type { StreamEvent } from '~/composables/useEventStream'
 
 const props = defineProps<{ event: StreamEvent }>()
+const { stats } = useEventStream()
 
 interface ParsedGood {
   atomic: Record<string, string | null>
@@ -239,7 +240,7 @@ const schemaLink = (uri: string) => ({ path: '/schemas', query: { uri } })
           </dt><dd v-if="bad.processor">
             {{ bad.processor }}
           </dd>
-          <dt>Topic</dt><dd>{{ event.topic }} @ {{ event.offset }}</dd>
+          <dt>{{ stats?.source.type === 'kinesis' ? 'Stream' : 'Topic' }}</dt><dd>{{ event.topic }} @ {{ event.offset }}</dd>
         </dl>
         <h4 class="text-xs uppercase tracking-wider text-muted mt-2">
           Full failure

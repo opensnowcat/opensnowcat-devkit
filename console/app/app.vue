@@ -21,9 +21,9 @@ const external: NavigationMenuItem[] = [
 const { stats, connected, connect } = useEventStream()
 onMounted(connect)
 
-const kafkaState = computed(() => {
+const pipelineState = computed(() => {
   if (!connected.value) return { label: 'Console offline', color: 'error' as const }
-  if (!stats.value?.kafka.connected) return { label: 'Waiting for Kafka', color: 'warning' as const }
+  if (!stats.value?.source.connected) return { label: `Waiting for ${stats.value?.source.label ?? 'the stream'}`, color: 'warning' as const }
   if (!stats.value?.collector.ready) return { label: 'Waiting for collector', color: 'warning' as const }
   if (!stats.value?.enrich.joined) return { label: 'Waiting for enrich', color: 'warning' as const }
   if (!stats.value?.pipeline.verified) return { label: 'Verifying pipeline', color: 'warning' as const }
@@ -65,17 +65,17 @@ const kafkaState = computed(() => {
 
         <template #footer="{ collapsed }">
           <div class="flex flex-col gap-2 w-full">
-            <UTooltip :text="stats?.kafka.error ?? kafkaState.label">
+            <UTooltip :text="stats?.source.error ?? pipelineState.label">
               <div class="flex items-center gap-2 text-xs text-muted">
                 <UChip
-                  :color="kafkaState.color"
+                  :color="pipelineState.color"
                   standalone
                   inset
                 />
                 <span
                   v-if="!collapsed"
                   class="truncate"
-                >{{ kafkaState.label }}</span>
+                >{{ pipelineState.label }}</span>
               </div>
             </UTooltip>
             <UButton

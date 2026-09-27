@@ -81,7 +81,7 @@ async function send() {
           variant="subtle"
           icon="i-lucide-loader-circle"
           :title="`${readiness.label}…`"
-          description="Sending is enabled once Kafka and the collector answer."
+          description="Sending is enabled once the event stream and the collector answer."
         />
         <UFormField label="What to send">
           <URadioGroup

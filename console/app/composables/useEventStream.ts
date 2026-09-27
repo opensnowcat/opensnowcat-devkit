@@ -32,7 +32,8 @@ export interface StreamStats {
   badPerSecond: number
   lastEventAt: number | null
   startedAt: number
-  kafka: { connected: boolean, error: string | null, brokers: string[], topics: string[] }
+  /** The Kafka or Kinesis tail. endpoint is the brokers or the AWS region, streams the topics or streams read. */
+  source: { type: 'kafka' | 'kinesis', label: string, connected: boolean, error: string | null, endpoint: string, streams: string[] }
   collector: { ready: boolean, error: string | null, checkedAt: number | null }
   enrich: { joined: boolean, state: string, members: number, lag: number, error: string | null }
   pipeline: { verified: boolean, probeSentAt: number | null, verifiedAt: number | null }
@@ -51,15 +52,16 @@ export function useEventStream() {
   const pendingWhilePaused = useState<number>('osc-pending', () => 0)
 
   const visible = computed(() => paused.value ? frozen.value : events.value)
-  /** Kafka tailing and the collector both answer: sending events will work. */
+  /** The stream tail and the collector both answer: sending events will work. */
   const ready = computed(() => connected.value && !!stats.value?.ready)
   const readiness = computed(() => {
-    if (!connected.value) return { label: 'Connecting to the console', detail: null as string | null }
-    if (!stats.value?.kafka.connected) return { label: 'Waiting for Kafka', detail: stats.value?.kafka.error ?? null }
-    if (!stats.value?.collector.ready) return { label: 'Waiting for the collector', detail: stats.value?.collector.error ?? null }
-    if (!stats.value?.enrich.joined) return { label: 'Waiting for enrich', detail: stats.value?.enrich.error ?? 'Enrich builds its parsers and joins Kafka. Up to a minute on a cold start.' }
-    if (!stats.value?.pipeline.verified) return { label: 'Verifying the pipeline', detail: 'A probe event is on its way through collector, Kafka and enrich.' }
-    return { label: 'Ready', detail: null }
+    const src = stats.value?.source.label ?? 'Kafka'
+    if (!connected.value) return { label: 'Connecting to the console', detail: null as string | null, waitingForSource: false }
+    if (!stats.value?.source.connected) return { label: `Waiting for ${src}`, detail: stats.value?.source.error ?? null, waitingForSource: true }
+    if (!stats.value?.collector.ready) return { label: 'Waiting for the collector', detail: stats.value?.collector.error ?? null, waitingForSource: false }
+    if (!stats.value?.enrich.joined) return { label: 'Waiting for enrich', detail: stats.value?.enrich.error ?? `Enrich builds its parsers and starts reading from ${src}. Up to a minute on a cold start.`, waitingForSource: false }
+    if (!stats.value?.pipeline.verified) return { label: 'Verifying the pipeline', detail: `A probe event is on its way through collector, ${src} and enrich.`, waitingForSource: false }
+    return { label: 'Ready', detail: null, waitingForSource: false }
   })
 
   function append(batch: StreamEvent[]) {
