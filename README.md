@@ -14,13 +14,13 @@ Add this line to your `/etc/hosts`: `127.0.0.1  warp`
 make run
 ```
 
-This starts the pipeline on Apache Kafka, waits for the console to come up, and opens it at http://localhost:8082. The collector listens on http://localhost:8080. `make run-kafka` is the same thing, and `make run-warpstream` uses WarpStream instead.
+This starts the pipeline on Apache Kafka, waits for the console to come up, and opens it at http://localhost:8082. The collector listens on http://localhost:8080. `make run-kafka` is the same thing, and `make run-warpstream` uses WarpStream instead, and `make run-kinesis` uses AWS Kinesis.
 
 WarpStream is Kafka-compatible and its demo is limited to 4 hours; `make warpstream-console` prints its cloud console URL.
 
 ## OpenSnowcat Console
 
-The console runs as a container next to the pipeline and talks to Kafka directly.
+The console runs as a container next to the pipeline and tails events from Kafka directly, or from AWS Kinesis with `make run-kinesis`.
 
 | Page | What you do there |
 |---|---|
@@ -67,6 +67,10 @@ The Provectus Kafka UI is still available for topic-level work, behind an option
 [Bento](https://warpstreamlabs.github.io/bento/) is a lightweight event processing engine for building real-time data pipelines. It is used to route events, applying transformations and filters along the way.
 
 The [Bento opensnowcat processor](https://warpstreamlabs.github.io/bento/docs/components/processors/opensnowcat) allows you to process, filter and enrich TSV events from any sink. In this devkit we load Bento opensnowcat processor that converts TSV events to JSON. See `/bento` yml files for more details or visit Bento website.
+
+## Using AWS Kinesis
+
+`make run-kinesis` runs the collector and enrich locally against Kinesis streams in your AWS account, using access keys exported in your shell or `AWS_PROFILE`. The console tails the enriched and bad streams straight from Kinesis. See [opensnowcat/aws/kinesis/README.md](opensnowcat/aws/kinesis/README.md).
 
 ## Using Google Cloud
 
