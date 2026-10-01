@@ -35,7 +35,8 @@ export interface StreamStats {
   badPerSecond: number
   lastEventAt: number | null
   startedAt: number
-  kafka: { connected: boolean, error: string | null, brokers: string[], topics: string[] }
+  /** The Kafka or Kinesis tail. endpoint is the brokers or the AWS region, streams the topics or streams read. */
+  source: { type: 'kafka' | 'kinesis', label: string, connected: boolean, error: string | null, endpoint: string, streams: string[] }
   collector: { ready: boolean, error: string | null, checkedAt: number | null }
   enrich: { joined: boolean, state: string, members: number, lag: number, error: string | null }
   pipeline: { verified: boolean, probeSentAt: number | null, verifiedAt: number | null }
@@ -55,7 +56,7 @@ class EventBuffer extends EventEmitter {
   totalBad = 0
   lastEventAt: number | null = null
   readonly startedAt = Date.now()
-  kafka: StreamStats['kafka'] = { connected: false, error: null, brokers: [], topics: [] }
+  source: StreamStats['source'] = { type: 'kafka', label: 'Kafka', connected: false, error: null, endpoint: '', streams: [] }
   collector: StreamStats['collector'] = { ready: false, error: null, checkedAt: null }
   enrich: StreamStats['enrich'] = { joined: false, state: 'unknown', members: 0, lag: 0, error: null }
   pipeline: StreamStats['pipeline'] = { verified: false, probeSentAt: null, verifiedAt: null }
@@ -110,11 +111,11 @@ class EventBuffer extends EventEmitter {
       badPerSecond: Math.round((b / (RATE_WINDOW_MS / 1000)) * 10) / 10,
       lastEventAt: this.lastEventAt,
       startedAt: this.startedAt,
-      kafka: this.kafka,
+      source: this.source,
       collector: this.collector,
       enrich: this.enrich,
       pipeline: this.pipeline,
-      ready: this.kafka.connected && this.collector.ready && this.enrich.joined && this.pipeline.verified
+      ready: this.source.connected && this.collector.ready && this.enrich.joined && this.pipeline.verified
     }
   }
 }

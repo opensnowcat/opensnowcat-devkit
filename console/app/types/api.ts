@@ -1,6 +1,8 @@
 export interface ConsoleInfo {
   version: string
+  streamSource: 'kafka' | 'kinesis'
   kafkaBrokers: string[]
+  kinesisRegion: string
   topics: Record<'collectedGood' | 'collectedBad' | 'enrichedGood' | 'enrichedBad' | 'enrichedJson', string>
   schemasDir: string
   schemasRoot: string

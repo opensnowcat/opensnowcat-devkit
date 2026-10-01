@@ -21,7 +21,11 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     // Server-only. Override with NUXT_<KEY> env vars, e.g. NUXT_KAFKA_BROKERS=warp:9092
+    // kafka or kinesis. With kinesis, the topic names below are the stream names and AWS credentials come from the environment.
+    streamSource: 'kafka',
     kafkaBrokers: 'localhost:9092',
+    // Defaults to AWS_REGION
+    kinesisRegion: '',
     topicCollectedGood: 'collected-good',
     topicCollectedBad: 'collected-bad',
     topicEnrichedGood: 'enriched-good',

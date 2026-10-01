@@ -38,7 +38,8 @@ export interface ContainerStatus {
 
 export async function listManagedContainers(): Promise<{ available: boolean, error: string | null, containers: ContainerStatus[] }> {
   const cfg = consoleConfig()
-  const roles: ContainerRole[] = ['collector', 'enrich', 'bento', 'kafka', 'tunnel']
+  // No broker or Bento next to Kinesis
+  const roles: ContainerRole[] = cfg.streamSource === 'kinesis' ? ['collector', 'enrich', 'tunnel'] : ['collector', 'enrich', 'bento', 'kafka', 'tunnel']
   const base = roles.map(role => ({ role, name: cfg.containers[role], found: false, running: false, state: 'missing', status: 'not created', image: '', id: null, startedAt: null } as ContainerStatus))
   if (!dockerSocketPresent()) return { available: false, error: `Docker socket not found at ${cfg.dockerSocket}`, containers: base }
   try {

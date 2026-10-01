@@ -1,10 +1,9 @@
 import { Admin, Consumer, stringDeserializers } from '@platformatic/kafka'
-import type { Message } from '@platformatic/kafka'
 import { eventBuffer } from './buffer'
-import { parseEnrichedTsv } from './enriched'
-import { summarizeBadRow } from './badrows'
+import { ingestRecord, PROBE_APP_ID } from './ingest'
 import { consoleConfig } from './config'
 import { sendEvents } from './collector'
+import { kinesisEnrichStatus } from './kinesis'
 
 type StringConsumer = Consumer<string, string, string, string>
 
@@ -19,14 +18,6 @@ const g = globalThis as unknown as { __osc_kafka?: KafkaState }
 const state: KafkaState = g.__osc_kafka ?? (g.__osc_kafka = { consumer: null, admin: null, starting: false, stopped: false })
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
-
-function tstampToMs(v: string | null | undefined): number | null {
-  if (!v) return null
-  // enriched timestamps look like "2026-09-23 08:01:02.123"
-  const iso = v.includes('T') ? v : v.replace(' ', 'T') + 'Z'
-  const ms = Date.parse(iso)
-  return Number.isFinite(ms) ? ms : null
-}
 
 export function getAdmin(): Admin {
   if (!state.admin) {
@@ -49,71 +40,6 @@ async function ensureTopics(topics: string[]) {
   }
 }
 
-function ingest(msg: Message<string, string, string, string>) {
-  const cfg = consoleConfig()
-  const t = cfg.topics
-  const msgTs = Number(msg.timestamp)
-  const baseTs = Number.isFinite(msgTs) && msgTs > 0 ? msgTs : Date.now()
-  const value = msg.value ?? ''
-  const common = { topic: msg.topic, partition: msg.partition, offset: String(msg.offset), raw: value }
-
-  if (msg.topic === t.enrichedGood) {
-    const parsed = parseEnrichedTsv(value)
-    const a = parsed.atomic
-    if (a.app_id === PROBE_APP_ID) {
-      if (!eventBuffer.pipeline.verified) console.info('[console] pipeline verified: probe event came back enriched')
-      eventBuffer.pipeline = { ...eventBuffer.pipeline, verified: true, verifiedAt: Date.now() }
-      return
-    }
-    const eventName = a.event_name ?? a.event ?? null
-    const schemaKeys = [
-      ...(parsed.unstruct ? [parsed.unstruct.schema] : []),
-      ...parsed.contexts.map(c => c.schema),
-      ...parsed.derivedContexts.map(c => c.schema)
-    ]
-    const where = a.page_url ?? a.se_action ?? ''
-    eventBuffer.push({
-      ...common,
-      kind: 'good',
-      ts: tstampToMs(a.collector_tstamp) ?? baseTs,
-      appId: a.app_id ?? null,
-      platform: a.platform ?? null,
-      eventName,
-      eventId: a.event_id ?? null,
-      schema: parsed.unstruct?.schema ?? null,
-      schemaKeys,
-      userId: a.user_id ?? null,
-      domainUserId: a.domain_userid ?? null,
-      badType: null,
-      summary: [eventName ?? 'event', where].filter(Boolean).join(' · '),
-      detail: parsed
-    })
-    return
-  }
-
-  const bad = summarizeBadRow(value)
-  if (bad.appId === PROBE_APP_ID) {
-    eventBuffer.pipeline = { ...eventBuffer.pipeline, verified: true, verifiedAt: Date.now() }
-    return
-  }
-  eventBuffer.push({
-    ...common,
-    kind: 'bad',
-    ts: bad.timestamp ?? baseTs,
-    appId: bad.appId,
-    platform: bad.platform,
-    eventName: bad.eventName,
-    eventId: bad.eventId,
-    schema: bad.schemaKeys[0] ?? null,
-    schemaKeys: bad.schemaKeys,
-    userId: null,
-    domainUserId: null,
-    badType: bad.badType,
-    summary: bad.summary,
-    detail: bad
-  })
-}
-
 async function runConsumer(topics: string[]) {
   const cfg = consoleConfig()
   const consumer: StringConsumer = new Consumer({
@@ -134,13 +60,13 @@ async function runConsumer(topics: string[]) {
     sessionTimeout: 10_000,
     heartbeatInterval: 3_000
   })
-  eventBuffer.kafka = { connected: true, error: null, brokers: cfg.kafkaBrokers, topics }
+  eventBuffer.source = { type: 'kafka', label: 'Kafka', connected: true, error: null, endpoint: cfg.kafkaBrokers.join(','), streams: topics }
   console.info(`[console] tailing ${topics.join(', ')} from ${cfg.kafkaBrokers.join(',')}`)
 
   await new Promise<void>((resolve, reject) => {
     stream.on('data', (msg) => {
       try {
-        ingest(msg)
+        ingestRecord({ stream: msg.topic, partition: msg.partition, offset: String(msg.offset), timestamp: Number(msg.timestamp), value: msg.value ?? '' })
       } catch (e) {
         console.warn('[console] failed to ingest message', e)
       }
@@ -162,11 +88,11 @@ export async function startKafka() {
       await ensureTopics([cfg.topics.collectedGood, ...topics])
       attempt = 0
       await runConsumer(topics)
-      eventBuffer.kafka = { ...eventBuffer.kafka, connected: false, error: 'stream closed' }
+      eventBuffer.source = { ...eventBuffer.source, connected: false, error: 'stream closed' }
     } catch (e) {
       attempt++
       const message = e instanceof Error ? e.message : String(e)
-      eventBuffer.kafka = { connected: false, error: message, brokers: cfg.kafkaBrokers, topics }
+      eventBuffer.source = { type: 'kafka', label: 'Kafka', connected: false, error: message, endpoint: cfg.kafkaBrokers.join(','), streams: topics }
       console.warn(`[console] kafka error (attempt ${attempt}): ${message}`)
     }
     try {
@@ -176,8 +102,6 @@ export async function startKafka() {
     await sleep(Math.min(10_000, 2_000 * Math.max(1, attempt)))
   }
 }
-
-export const PROBE_APP_ID = 'console-probe'
 
 type LagConsumer = Consumer<string, string, string, string>
 const lagState = (globalThis as unknown as { __osc_lag?: { consumer: LagConsumer | null } }).__osc_lag
@@ -218,7 +142,11 @@ export function startPipelineProbe(): () => void {
         eventBuffer.collector = { ready: false, error: (e as Error).name === 'TimeoutError' ? 'Collector did not answer in 3s' : ((e as Error).message ?? String(e)), checkedAt: Date.now() }
       }
 
-      if (eventBuffer.kafka.connected) {
+      if (eventBuffer.source.connected && cfg.streamSource === 'kinesis') {
+        const joined = await kinesisEnrichStatus()
+        if (!joined.joined && eventBuffer.enrich.joined) eventBuffer.pipeline = { verified: false, probeSentAt: null, verifiedAt: null }
+        eventBuffer.enrich = joined
+      } else if (eventBuffer.source.connected) {
         try {
           const groups = await getAdmin().describeGroups({ groups: [cfg.enrichGroupId] })
           const g = groups.get(cfg.enrichGroupId) as { state?: unknown, members?: Map<string, unknown> } | undefined
@@ -239,7 +167,7 @@ export function startPipelineProbe(): () => void {
       }
 
       const p = eventBuffer.pipeline
-      const canProbe = eventBuffer.kafka.connected && eventBuffer.collector.ready && eventBuffer.enrich.joined && !p.verified
+      const canProbe = eventBuffer.source.connected && eventBuffer.collector.ready && eventBuffer.enrich.joined && !p.verified
       if (canProbe && (!p.probeSentAt || Date.now() - p.probeSentAt > 20_000)) {
         eventBuffer.pipeline = { ...p, probeSentAt: Date.now() }
         try {

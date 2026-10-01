@@ -1,0 +1,79 @@
+# Collector and enrich on AWS Kinesis, with the console serving local schemas to enrich.
+# Start with `make run-kinesis`, which exports AWS credentials from your profile first.
+# The console tails the enriched and bad streams straight from Kinesis.
+networks:
+  appnet:
+    name: opensnowcat
+
+x-aws-env: &aws-env
+  # Credentials are passed through from the environment `make run-kinesis` prepares, and only when set
+  - AWS_ACCESS_KEY_ID
+  - AWS_SECRET_ACCESS_KEY
+  - AWS_SESSION_TOKEN
+  - AWS_REGION=${AWS_REGION:-us-east-1}
+  - KINESIS_COLLECTOR_GOOD=${KINESIS_COLLECTOR_GOOD:-collected-good}
+  - KINESIS_COLLECTOR_BAD=${KINESIS_COLLECTOR_BAD:-collected-bad}
+  - KINESIS_ENRICHED_GOOD=${KINESIS_ENRICHED_GOOD:-enriched-good}
+  - KINESIS_ENRICHED_BAD=${KINESIS_ENRICHED_BAD:-enriched-bad}
+  - KINESIS_ENRICH_APP_NAME=${KINESIS_ENRICH_APP_NAME:-opensnowcat-enrich-devkit}
+  - LOG_LEVEL=INFO
+
+services:
+
+  opensnowcat_collector:
+    container_name: opensnowcat_collector
+    networks: [ appnet ]
+    image: opensnowcat/opensnowcat-collector-kinesis:latest
+    volumes:
+      - ${PWD}/opensnowcat:/opensnowcat
+    command: '--config /opensnowcat/aws/kinesis/config.collector.hocon'
+    restart: on-failure
+    ports:
+      - "8080:8080"
+    environment: *aws-env
+
+  opensnowcat_enrich:
+    container_name: opensnowcat_enrich
+    networks: [ appnet ]
+    image: opensnowcat/opensnowcat-enrich-kinesis:latest
+    volumes:
+      - ${PWD}/opensnowcat:/opensnowcat
+    command: '--enrichments /opensnowcat/enrichments --iglu-config /opensnowcat/resolver.json --config /opensnowcat/aws/kinesis/config.enrich.hocon'
+    restart: on-failure
+    depends_on:
+      - console
+    environment: *aws-env
+
+  console:
+    container_name: opensnowcat_console
+    networks: [ appnet ]
+    image: opensnowcat/opensnowcat-console:latest
+    build:
+      context: ./console
+    ports:
+      - "8082:3000"
+    volumes:
+      - ${PWD}/opensnowcat:/opensnowcat
+      - ${SCHEMAS_DIR:-./schemas}:/schemas
+      - ${HOST_HOME:-${HOME}}:/host/home
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - NUXT_STREAM_SOURCE=kinesis
+      - NUXT_TOPIC_COLLECTED_GOOD=${KINESIS_COLLECTOR_GOOD:-collected-good}
+      - NUXT_TOPIC_COLLECTED_BAD=${KINESIS_COLLECTOR_BAD:-collected-bad}
+      - NUXT_TOPIC_ENRICHED_GOOD=${KINESIS_ENRICHED_GOOD:-enriched-good}
+      - NUXT_TOPIC_ENRICHED_BAD=${KINESIS_ENRICHED_BAD:-enriched-bad}
+      - NUXT_HOST_HOME_MOUNT=/host/home
+      - NUXT_HOST_HOME_PATH=${HOST_HOME:-${HOME}}
+      - NUXT_SCHEMAS_DIR=/schemas
+      - NUXT_OPENSNOWCAT_DIR=/opensnowcat
+      - NUXT_COLLECTOR_URL=http://opensnowcat_collector:8080
+      - NUXT_CONSOLE_REGISTRY_URL=http://console:3000/iglu
+      - NUXT_TUNNEL_TARGET=http://opensnowcat_collector:8080
+      - NUXT_PUBLIC_COLLECTOR_PUBLIC_URL=http://localhost:8080
+      - NUXT_PUBLIC_CONSOLE_PUBLIC_URL=http://localhost:8082
+    restart: on-failure

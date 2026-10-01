@@ -4,7 +4,9 @@ export default defineEventHandler(() => {
   const cfg = consoleConfig()
   return {
     version: '0.1.0',
+    streamSource: cfg.streamSource,
     kafkaBrokers: cfg.kafkaBrokers,
+    kinesisRegion: cfg.kinesisRegion,
     topics: cfg.topics,
     schemasDir: cfg.schemasDir,
     schemasRoot: schemasRoot(),

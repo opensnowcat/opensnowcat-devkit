@@ -7,13 +7,16 @@ useHead({ title: 'Pipeline · OpenSnowcat Console' })
 interface ContainerStatus { role: string, name: string, found: boolean, running: boolean, state: string, status: string, image: string, id: string | null }
 interface TopicInfo { name: string, partitions: number, earliest: string, latest: string, messages: string }
 interface GroupInfo { id: string, state: string, members: number, protocolType: string }
+interface StreamInfo { name: string, status: string, mode: string, shards: number, retentionHours: number, behindMs: number | null, error: string | null }
 
 const toast = useToast()
 const hydrated = useHydrated()
 const { data: containers, refresh: refreshContainers, pending: containersPending } = await useFetch<{ available: boolean, error: string | null, containers: ContainerStatus[] }>('/api/pipeline/containers', { server: false, lazy: true, getCachedData: () => undefined })
-const { data: topics, refresh: refreshTopics, pending: topicsPending } = await useFetch<{ ok: boolean, topics: TopicInfo[], groups: GroupInfo[], error: string | null }>('/api/pipeline/topics', { server: false, lazy: true, getCachedData: () => undefined })
+const { data: topics, refresh: refreshTopics, pending: topicsPending } = await useFetch<{ ok: boolean, source: 'kafka' | 'kinesis', topics: TopicInfo[], groups: GroupInfo[], streams: StreamInfo[], error: string | null }>('/api/pipeline/topics', { server: false, lazy: true, getCachedData: () => undefined })
 const { data: info } = await useFetch<ConsoleInfo>('/api/info', { server: false, lazy: true, getCachedData: () => undefined })
 const { stats } = useEventStream()
+const kinesis = computed(() => (topics.value?.source ?? info.value?.streamSource) === 'kinesis')
+const broker = computed(() => kinesis.value ? 'Kinesis' : 'Kafka')
 
 let timer: ReturnType<typeof setInterval> | null = null
 onMounted(() => { timer = setInterval(() => { refreshContainers(); refreshTopics() }, 5000) })
@@ -58,13 +61,13 @@ async function loadLogs() {
 
 const RESTARTABLE = ['enrich', 'collector', 'bento']
 const ROLE_LABEL: Record<string, string> = { collector: 'Collector', enrich: 'Enrich', bento: 'Bento', kafka: 'Kafka', tunnel: 'Tunnel' }
-const ROLE_DESC: Record<string, string> = {
-  collector: 'Receives tracker requests on :8080 and writes raw payloads to Kafka',
+const ROLE_DESC = computed<Record<string, string>>(() => ({
+  collector: `Receives tracker requests on :8080 and writes raw payloads to ${broker.value}`,
   enrich: 'Validates against schemas, runs enrichments, writes good and bad rows',
   bento: 'Converts enriched TSV to JSON on a side topic',
   kafka: 'The broker every component talks to',
   tunnel: 'cloudflared quick tunnel, when started from the Expose page'
-}
+}))
 
 const topicColumns: TableColumn<TopicInfo>[] = [
   { accessorKey: 'name', header: 'Topic' },
@@ -72,6 +75,15 @@ const topicColumns: TableColumn<TopicInfo>[] = [
   { accessorKey: 'messages', header: 'Messages' },
   { accessorKey: 'latest', header: 'End offset' }
 ]
+const streamColumns: TableColumn<StreamInfo>[] = [
+  { accessorKey: 'name', header: 'Stream' },
+  { accessorKey: 'status', header: 'Status' },
+  { accessorKey: 'shards', header: 'Shards' },
+  { accessorKey: 'mode', header: 'Mode', cell: ({ row }) => row.original.mode.replace('_', '-').toLowerCase() || '—' },
+  { accessorKey: 'retentionHours', header: 'Retention', cell: ({ row }) => row.original.retentionHours ? `${row.original.retentionHours} h` : '—' },
+  { accessorKey: 'behindMs', header: 'Console behind', cell: ({ row }) => row.original.behindMs == null ? '—' : row.original.behindMs < 1000 ? 'at tip' : `${Math.round(row.original.behindMs / 1000)} s` }
+]
+const missingStreams = computed(() => (topics.value?.streams ?? []).filter(s => s.error))
 const groupColumns: TableColumn<GroupInfo>[] = [
   { accessorKey: 'id', header: 'Consumer group' },
   { accessorKey: 'state', header: 'State' },
@@ -179,7 +191,51 @@ const groupColumns: TableColumn<GroupInfo>[] = [
         </div>
 
         <div class="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-          <UCard variant="subtle">
+          <UCard
+            v-if="kinesis"
+            variant="subtle"
+          >
+            <template #header>
+              <div class="flex items-center gap-2">
+                <UIcon
+                  name="i-lucide-waves"
+                  class="text-muted"
+                />
+                <h3 class="font-semibold">
+                  Kinesis streams
+                </h3>
+                <span class="text-xs text-muted ml-auto">{{ info?.kinesisRegion }}</span>
+              </div>
+            </template>
+            <UAlert
+              v-if="topics && !topics.ok"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-unplug"
+              title="Kinesis call failed"
+              :description="topics.error ?? ''"
+            />
+            <template v-else>
+              <UAlert
+                v-if="missingStreams.length"
+                color="warning"
+                variant="subtle"
+                icon="i-lucide-triangle-alert"
+                :title="missingStreams.map(s => s.error).join(' · ')"
+                class="mb-3"
+              />
+              <UTable
+                :data="topics?.streams ?? []"
+                :columns="streamColumns"
+                :loading="hydrated && topicsPending && !topics"
+                class="text-sm"
+              />
+            </template>
+          </UCard>
+          <UCard
+            v-else
+            variant="subtle"
+          >
             <template #header>
               <div class="flex items-center gap-2">
                 <UIcon
@@ -209,7 +265,10 @@ const groupColumns: TableColumn<GroupInfo>[] = [
             />
           </UCard>
           <div class="flex flex-col gap-6">
-            <UCard variant="subtle">
+            <UCard
+              v-if="!kinesis"
+              variant="subtle"
+            >
               <template #header>
                 <h3 class="font-semibold">
                   Consumer groups
@@ -228,8 +287,8 @@ const groupColumns: TableColumn<GroupInfo>[] = [
                 </h3>
               </template>
               <dl class="osc-kv">
-                <dt>Tailing</dt><dd>{{ stats?.kafka.topics.join(', ') || '—' }}</dd>
-                <dt>Kafka</dt><dd>{{ stats?.kafka.connected ? 'connected' : (stats?.kafka.error ?? 'connecting') }}</dd>
+                <dt>Tailing</dt><dd>{{ stats?.source.streams.join(', ') || '—' }}</dd>
+                <dt>{{ stats?.source.label ?? 'Kafka' }}</dt><dd>{{ stats?.source.connected ? 'connected' : (stats?.source.error ?? 'connecting') }}</dd>
                 <dt>Buffered</dt><dd>{{ stats?.buffered ?? 0 }} / {{ stats?.capacity ?? 0 }}</dd>
                 <dt>Schemas</dt><dd>{{ info?.schemasRoot }}</dd>
                 <dt>Resolver</dt><dd>{{ info?.resolverPath }}</dd>

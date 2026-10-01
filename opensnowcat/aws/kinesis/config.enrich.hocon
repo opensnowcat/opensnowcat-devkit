@@ -1,0 +1,46 @@
+# OpenSnowcat enrich reading from and writing to AWS Kinesis.
+# Stream names and region can be overridden with env vars (see opensnowcat/aws/kinesis/README.md).
+# Enrich uses the AWS default credential chain and keeps its KCL checkpoints in a
+# DynamoDB table named after appName, created on first start.
+{
+  "input": {
+    "type": "Kinesis"
+    "appName": "opensnowcat-enrich-devkit"
+    "appName": ${?KINESIS_ENRICH_APP_NAME}
+    "streamName": "collected-good"
+    "streamName": ${?KINESIS_COLLECTOR_GOOD}
+    "region": "us-east-1"
+    "region": ${?AWS_REGION}
+    "initialPosition": {
+      "type": "LATEST"
+    }
+  }
+
+  "output": {
+    "good": {
+      "type": "Kinesis"
+      "streamName": "enriched-good"
+      "streamName": ${?KINESIS_ENRICHED_GOOD}
+      "region": "us-east-1"
+      "region": ${?AWS_REGION}
+    }
+
+    "bad": {
+      "type": "Kinesis"
+      "streamName": "enriched-bad"
+      "streamName": ${?KINESIS_ENRICHED_BAD}
+      "region": "us-east-1"
+      "region": ${?AWS_REGION}
+    }
+  }
+
+  "monitoring": {
+    "metrics": {
+      # No CloudWatch metrics from a laptop, log them instead
+      "cloudwatch": false
+      "stdout": {
+        "period": "30 seconds"
+      }
+    }
+  }
+}

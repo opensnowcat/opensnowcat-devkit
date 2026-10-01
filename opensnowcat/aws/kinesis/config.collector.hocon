@@ -1,0 +1,33 @@
+# OpenSnowcat collector writing to AWS Kinesis.
+# Stream names and region can be overridden with env vars (see opensnowcat/aws/kinesis/README.md).
+collector {
+  interface = "0.0.0.0"
+  port = 8080
+
+  streams {
+    good = "collected-good"
+    good = ${?KINESIS_COLLECTOR_GOOD}
+    bad = "collected-bad"
+    bad = ${?KINESIS_COLLECTOR_BAD}
+
+    sink {
+      enabled = kinesis
+      region = "us-east-1"
+      region = ${?AWS_REGION}
+
+      # "default" uses the AWS default credential chain: AWS_ACCESS_KEY_ID /
+      # AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN env vars, then ~/.aws profiles.
+      aws {
+        accessKey = default
+        secretKey = default
+      }
+    }
+
+    # Flush quickly so events show up in Kinesis while developing
+    buffer {
+      byteLimit = 1000000
+      recordLimit = 500
+      timeLimit = 500
+    }
+  }
+}

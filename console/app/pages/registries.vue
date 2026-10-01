@@ -277,7 +277,7 @@ async function restartEnrich() {
     }
     await $fetch('/api/pipeline/restart', { method: 'POST', body: { role: 'enrich' } })
     restartNeeded.value = false
-    toast.add({ title: 'Enrich is restarting', description: 'It rejoins Kafka in a few seconds and then uses the new registry list.', color: 'success', icon: 'i-lucide-refresh-cw' })
+    toast.add({ title: 'Enrich is restarting', description: 'It is back in a few seconds and then uses the new registry list.', color: 'success', icon: 'i-lucide-refresh-cw' })
     setTimeout(() => refresh(), 4000)
   } catch (e) {
     restartError.value = (e as { data?: { statusMessage?: string } }).data?.statusMessage ?? (e as Error).message
